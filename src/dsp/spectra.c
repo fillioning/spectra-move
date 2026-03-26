@@ -70,9 +70,25 @@ static inline int clampi(int x, int lo, int hi) {
 #define SAMPLE_RATE     44100
 #define BLOCK_SIZE      128
 #define FFT_SIZE        512
-#define YIN_BUFFER_SIZE 2048
 #define MAX_VOICES      4
 #define MAX_RESONATORS  12
+
+/* ── Multiband analysis ─────────────────────────────────────────────────────── */
+/* 8 bands, roughly octave-spaced. 512-pt FFT at 44.1k = 86.13 Hz/bin.
+ * Each band covers a frequency range relevant to drum/instrument separation:
+ *   0: sub-bass (kick fundamental)    1: bass (kick body, bass)
+ *   2: low-mid (toms, low snare)      3: mid (snare body, vocals)
+ *   4: upper-mid (snare crack, clap)  5: presence (hi-hat attack)
+ *   6: brilliance (hi-hat, cymbals)   7: air (shimmer, noise)
+ */
+#define NUM_BANDS 8
+/* Bin ranges [start, end) for each band */
+static const int BAND_BIN_START[NUM_BANDS] = {  1,   2,   4,   8,  16,  32,  64, 128 };
+static const int BAND_BIN_END[NUM_BANDS]   = {  2,   4,   8,  16,  32,  64, 128, 256 };
+/* Center frequency of each band in Hz (geometric mean of bin range) */
+static const float BAND_CENTER_HZ[NUM_BANDS] = {
+    86.0f, 258.0f, 516.0f, 1033.0f, 2067.0f, 4134.0f, 8268.0f, 16536.0f
+};
 
 /* ── Enum definitions ────────────────────────────────────────────────────────── */
 
@@ -137,6 +153,21 @@ static const knob_def_t KNOB_MAP[8] = {
     { "root_note",  "Root",       0, 11, 1.0f, 1 },
     { "scale",      "Scale",      0, 11, 1.0f, 1 },
     { "mix",        "Mix",        0, 1, 0.01f, 0 },
+};
+
+/* Page 2 knob mapping (Control page)
+ * 1=Chord Drift, 2=Resonators, 3=Oct Range, 4=Compress,
+ * 5=Pre Gain, 6=Post Gain, 7=HPF, 8=LPF
+ * Polyphony is menu-only (not on a knob). */
+static const knob_def_t KNOB_MAP_P2[8] = {
+    { "chord_drift",  "Chrd Drft",  0, 1, 0.01f, 0 },
+    { "resonators",   "Resonatrs",  0, 2, 1.0f,  1 },
+    { "octave_range", "Oct Range",  0, 3, 1.0f,  1 },
+    { "compress",     "Compress",   0, 1, 0.01f, 0 },
+    { "pre_gain",     "Pre Gain",  -12, 12, 0.5f, 0 },
+    { "post_gain",    "Post Gain", -12, 12, 0.5f, 0 },
+    { "hpf",          "HPF",        20, 2000, 20.0f, 0 },
+    { "lpf",          "LPF",       500, 20000, 200.0f, 0 },
 };
 
 /* ── FFT (real-only, radix-2 DIT) ────────────────────────────────────────────
@@ -208,7 +239,9 @@ static inline float svf_process_bp(svf_state_t *f, float input) {
     f->lp += f->fc * f->bp + DENORMAL_GUARD;
     float hp = input - f->lp - f->fb * f->bp;
     f->bp += f->fc * hp + DENORMAL_GUARD;
-    return f->bp;
+    /* Normalize by Q: raw bandpass gain ≈ Q at resonance.
+     * Multiply by fb (= 1/Q) to keep output level roughly constant. */
+    return f->bp * f->fb;
 }
 
 /* One-pole filter for HPF/LPF output chain */
@@ -242,21 +275,12 @@ typedef struct {
     int num_resonators;       /* active resonator count */
 } voice_t;
 
-/* ── YIN pitch detector state ────────────────────────────────────────────────── */
-
-typedef struct {
-    float buffer[YIN_BUFFER_SIZE];
-    int write_pos;
-    float diff[YIN_BUFFER_SIZE / 2];
-    float cmnd[YIN_BUFFER_SIZE / 2]; /* cumulative mean normalized difference */
-} yin_state_t;
-
 /* ── Instance state ──────────────────────────────────────────────────────────── */
 
 typedef struct {
     /* Page 1 — Main (knob-mapped) */
     float onset;           /* spectral flux threshold 0-1 */
-    float frequency;       /* YIN confidence threshold 0-1 */
+    float frequency;       /* band selectivity 0-1: 0=all→root, 1=full freq mapping */
     float brightness;      /* manual brightness offset 0-1 */
     float timbre;          /* inharmonicity 0-1 */
     float decay;           /* ring time 0-1 (maps to 50ms-10s) */
@@ -271,13 +295,14 @@ typedef struct {
     int   octave_range_idx; /* 0=1, 1=2, 2=3, 3=4 */
     float pre_gain;        /* -12 to +12 dB */
     float post_gain;       /* -12 to +12 dB */
-    float hpf;             /* 20-2000 Hz */
-    float lpf;             /* 500-20000 Hz */
+    int   hpf;             /* 20-2000 Hz (integer target) */
+    int   lpf;             /* 500-20000 Hz (integer target) */
+    float hpf_smooth;      /* smoothed HPF for coefficient computation */
+    float lpf_smooth;      /* smoothed LPF for coefficient computation */
     int   limiter;         /* 0=Off, 1=On */
+    float compress;        /* RMS compressor strength 0-1 */
 
-    /* Analysis state */
-    yin_state_t yin;
-    int yin_blocks_since_last;  /* run YIN every N blocks to save CPU */
+    /* FFT analysis state */
     float fft_re[FFT_SIZE];
     float fft_im[FFT_SIZE];
     float prev_magnitude[FFT_SIZE / 2]; /* previous frame magnitudes for spectral flux */
@@ -286,11 +311,15 @@ typedef struct {
     int   mono_write_pos;
     int   fft_ready;                    /* flag: enough samples accumulated */
 
-    /* Detected analysis values */
-    float detected_freq;    /* Hz, from YIN */
-    float detected_confidence; /* 0-1 from YIN */
+    /* Multiband analysis state */
+    float band_energy[NUM_BANDS];       /* current energy per band */
+    float band_prev_energy[NUM_BANDS];  /* previous frame energy per band */
+    float band_flux_avg[NUM_BANDS];     /* running average of per-band flux */
+    int   band_onset[NUM_BANDS];        /* onset flag per band per frame */
+
+    /* Global analysis */
     float spectral_flatness;   /* 0-1 */
-    int   onset_detected;      /* flag per block */
+    float input_rms;           /* smoothed RMS of input */
 
     /* Voice allocator */
     voice_t voices[MAX_VOICES];
@@ -300,8 +329,12 @@ typedef struct {
     onepole_t hp_l, hp_r;
     onepole_t lp_l, lp_r;
 
-    /* Temp buffer for YIN reordering (avoid 8KB stack alloc) */
-    float yin_temp[YIN_BUFFER_SIZE];
+    /* Compressor state */
+    float comp_env_l;      /* RMS envelope follower L */
+    float comp_env_r;      /* RMS envelope follower R */
+
+    /* UI page tracking (0=Spectra/Main, 1=Control) */
+    int current_page;
 
     /* PRNG state (xorshift32 for chord drift) */
     uint32_t rng_state;
@@ -325,6 +358,7 @@ static inline float rand_float(uint32_t *state) {
 
 /* ── Param pointer helpers ───────────────────────────────────────────────────── */
 
+/* Page 1 float param pointers */
 static float *get_float_param_ptr(plugin_instance_t *inst, int idx) {
     switch (idx) {
         case 0: return &inst->onset;
@@ -337,6 +371,7 @@ static float *get_float_param_ptr(plugin_instance_t *inst, int idx) {
     }
 }
 
+/* Page 1 int param pointers */
 static int *get_int_param_ptr(plugin_instance_t *inst, int idx) {
     switch (idx) {
         case 5: return &inst->root_note;
@@ -345,65 +380,24 @@ static int *get_int_param_ptr(plugin_instance_t *inst, int idx) {
     }
 }
 
-/* ── YIN pitch detection ─────────────────────────────────────────────────────
- * Implements the YIN algorithm (de Cheveigné & Kawahara 2002).
- * Operates on 2048-sample buffer, returns frequency in Hz and confidence.
- */
-
-static void yin_detect(yin_state_t *yin, float threshold, float *out_freq, float *out_confidence) {
-    int half = YIN_BUFFER_SIZE / 2;
-
-    /* Step 2: Difference function */
-    for (int tau = 0; tau < half; tau++) {
-        yin->diff[tau] = 0.0f;
-        for (int j = 0; j < half; j++) {
-            float delta = yin->buffer[j] - yin->buffer[j + tau];
-            yin->diff[tau] += delta * delta;
-        }
+/* Page 2 float param pointers */
+static float *get_float_param_ptr_p2(plugin_instance_t *inst, int idx) {
+    switch (idx) {
+        case 0: return &inst->chord_drift;
+        case 3: return &inst->compress;
+        case 4: return &inst->pre_gain;
+        case 5: return &inst->post_gain;
+        default: return NULL;
     }
+}
 
-    /* Step 3: Cumulative mean normalized difference function */
-    yin->cmnd[0] = 1.0f;
-    float running_sum = 0.0f;
-    for (int tau = 1; tau < half; tau++) {
-        running_sum += yin->diff[tau];
-        yin->cmnd[tau] = (running_sum > 0.0f) ? yin->diff[tau] * tau / running_sum : 1.0f;
+/* Page 2 int param pointers */
+static int *get_int_param_ptr_p2(plugin_instance_t *inst, int idx) {
+    switch (idx) {
+        case 1: return &inst->resonators_idx;
+        case 2: return &inst->octave_range_idx;
+        default: return NULL;
     }
-
-    /* Step 4: Absolute threshold — find first dip below threshold */
-    int tau_estimate = -1;
-    /* Skip tau 0 and 1 (too short for valid pitch) */
-    for (int tau = 2; tau < half; tau++) {
-        if (yin->cmnd[tau] < threshold) {
-            /* Find local minimum */
-            while (tau + 1 < half && yin->cmnd[tau + 1] < yin->cmnd[tau]) {
-                tau++;
-            }
-            tau_estimate = tau;
-            break;
-        }
-    }
-
-    if (tau_estimate < 0) {
-        *out_freq = 0.0f;
-        *out_confidence = 0.0f;
-        return;
-    }
-
-    /* Step 5: Parabolic interpolation for sub-sample accuracy */
-    float better_tau = (float)tau_estimate;
-    if (tau_estimate > 0 && tau_estimate < half - 1) {
-        float s0 = yin->cmnd[tau_estimate - 1];
-        float s1 = yin->cmnd[tau_estimate];
-        float s2 = yin->cmnd[tau_estimate + 1];
-        float denom = 2.0f * (2.0f * s1 - s2 - s0);
-        if (fabsf(denom) > 1e-10f) {
-            better_tau = (float)tau_estimate + (s0 - s2) / denom;
-        }
-    }
-
-    *out_freq = (better_tau > 0.0f) ? (float)SAMPLE_RATE / better_tau : 0.0f;
-    *out_confidence = 1.0f - yin->cmnd[tau_estimate];
 }
 
 /* ── Scale quantizer ─────────────────────────────────────────────────────────── */
@@ -467,50 +461,58 @@ static float apply_chord_drift(float midi_note, float drift_amount, uint32_t *rn
 }
 
 /* ── Resonator bank tuning ───────────────────────────────────────────────────
- * Given a base note, scale, and resonator count, compute frequencies for the bank.
- * Timbre shifts partial ratios from harmonic (0) to inharmonic (1).
+ * Timbre controls the character:
+ *   0.0 = pure harmonic series (f, 2f, 3f...) — synth-like, clear pitch
+ *   0.5 = blend between harmonics and scale degrees
+ *   1.0 = scale degrees across octaves — chordal, bell-like, spread
+ * This crossfade is the key to making Timbre audible and musical.
  */
 
 static void tune_resonator_bank(voice_t *v, float base_midi, int root, int scale_idx,
                                  int res_count, int octave_range, float timbre, float q_value) {
-    v->num_resonators = res_count;
     if (res_count > MAX_RESONATORS) res_count = MAX_RESONATORS;
+    float base_freq = midi_to_freq(base_midi);
 
+    /* ── Compute harmonic series frequencies (timbre=0 target) ── */
+    float harm_freq[MAX_RESONATORS];
+    for (int i = 0; i < res_count; i++) {
+        /* Harmonic series: f, 2f, 3f, 4f... clamped to audible range */
+        harm_freq[i] = clampf(base_freq * (float)(i + 1), 20.0f, 18000.0f);
+    }
+
+    /* ── Compute scale-degree frequencies (timbre=1 target) ── */
+    float scale_freq[MAX_RESONATORS];
     int size = SCALE_SIZES[scale_idx];
     const int *intervals = SCALE_INTERVALS[scale_idx];
-
-    /* Build the resonator frequencies across the octave range */
-    int idx = 0;
     int base_octave = (int)base_midi / 12;
-
+    int idx = 0;
     for (int oct = 0; oct < octave_range && idx < res_count; oct++) {
         for (int i = 0; i < size && idx < res_count; i++) {
             float midi = (float)((base_octave + oct) * 12 + (root + intervals[i]) % 12);
-            /* Only include notes at or above the base */
             if (midi < base_midi - 0.5f) midi += 12.0f;
-
-            /* Apply inharmonicity (timbre): stretch ratio away from integer harmonics */
-            if (timbre > 0.0f && idx > 0) {
-                float ratio = midi_to_freq(midi) / midi_to_freq(base_midi);
-                /* Stretch the ratio: higher partials get stretched more */
-                float stretch = 1.0f + timbre * 0.02f * ratio * ratio;
-                float stretched_freq = midi_to_freq(base_midi) * ratio * stretch;
-                v->resonators[idx].freq = clampf(stretched_freq, 20.0f, 20000.0f);
-            } else {
-                v->resonators[idx].freq = clampf(midi_to_freq(midi), 20.0f, 20000.0f);
-            }
-            v->resonators[idx].q = q_value;
-            svf_update_coeff(&v->resonators[idx]);
+            scale_freq[idx] = clampf(midi_to_freq(midi), 20.0f, 18000.0f);
             idx++;
         }
     }
+    /* Fill any remaining with octave-folded harmonics */
+    for (int i = idx; i < res_count; i++) {
+        scale_freq[i] = harm_freq[i < MAX_RESONATORS ? i : MAX_RESONATORS - 1];
+    }
 
-    /* Fill remaining with silence */
-    for (int i = idx; i < MAX_RESONATORS; i++) {
+    /* ── Crossfade between harmonic and scale-degree tuning ── */
+    for (int i = 0; i < res_count; i++) {
+        float freq = harm_freq[i] * (1.0f - timbre) + scale_freq[i] * timbre;
+        v->resonators[i].freq = clampf(freq, 20.0f, 18000.0f);
+        v->resonators[i].q = q_value;
+        svf_update_coeff(&v->resonators[i]);
+    }
+
+    /* Silence unused resonators */
+    for (int i = res_count; i < MAX_RESONATORS; i++) {
         v->resonators[i].freq = 0.0f;
         v->resonators[i].fc = 0.0f;
     }
-    v->num_resonators = idx;
+    v->num_resonators = res_count;
 }
 
 /* ── Tape soft clipper (limiter) ─────────────────────────────────────────────── */
@@ -530,25 +532,28 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     if (!inst) return NULL;
 
     /* Page 1 defaults */
-    inst->onset = 0.3f;
-    inst->frequency = 0.5f;
-    inst->brightness = 0.5f;
+    inst->onset = 0.7f;
+    inst->frequency = 0.3f;
+    inst->brightness = 0.3f;
     inst->timbre = 0.0f;
     inst->decay = 0.5f;
     inst->root_note = 0;    /* C */
     inst->scale = 0;        /* Major */
-    inst->mix = 0.5f;
+    inst->mix = 1.0f;
 
     /* Page 2 defaults */
     inst->chord_drift = 0.0f;
-    inst->resonators_idx = 1;   /* 7 */
-    inst->polyphony_idx = 1;    /* 2 */
-    inst->octave_range_idx = 3; /* 4 */
+    inst->resonators_idx = 2;   /* 12 */
+    inst->polyphony_idx = 2;    /* 4 */
+    inst->octave_range_idx = 1; /* 2 octaves — lighter CPU than 4 */
     inst->pre_gain = 0.0f;
     inst->post_gain = 0.0f;
-    inst->hpf = 20.0f;
-    inst->lpf = 20000.0f;
+    inst->hpf = 20;
+    inst->lpf = 20000;
+    inst->hpf_smooth = 20.0f;
+    inst->lpf_smooth = 20000.0f;
     inst->limiter = 1;     /* On */
+    inst->compress = 0.2f; /* 20% — same default as Dissolver */
 
     /* Initialize Hann window for FFT */
     for (int i = 0; i < FFT_SIZE; i++) {
@@ -572,25 +577,46 @@ static void set_param(void *instance, const char *key, const char *val) {
     plugin_instance_t *inst = (plugin_instance_t *)instance;
     if (!inst || !key || !val) return;
 
-    /* ── knob_N_adjust ── */
+    /* ── Page tracking (Schwung sends _level when user navigates pages) ── */
+    if (strcmp(key, "_level") == 0) {
+        if (strcmp(val, "Control") == 0) inst->current_page = 1;
+        else inst->current_page = 0; /* "Spectra" or root */
+        return;
+    }
+
+    /* ── knob_N_adjust (page-aware) ── */
     if (strncmp(key, "knob_", 5) == 0 && strstr(key, "_adjust")) {
         int knob_num = atoi(key + 5);
         int idx = knob_num - 1;
-        if (idx >= 0 && idx < 8 && KNOB_MAP[idx].key) {
-            float delta = atof(val);
-            const knob_def_t *k = &KNOB_MAP[idx];
-            if (k->is_enum) {
-                int *p = get_int_param_ptr(inst, idx);
-                if (p) {
-                    int new_val = *p + (int)delta;
-                    if (new_val > (int)k->max) new_val = (int)k->min;
-                    if (new_val < (int)k->min) new_val = (int)k->max;
-                    *p = new_val;
-                }
-            } else {
-                float *p = get_float_param_ptr(inst, idx);
-                if (p) *p = clampf(*p + delta * k->step, k->min, k->max);
-            }
+        if (idx < 0 || idx >= 8) return;
+
+        float delta = atof(val);
+        const knob_def_t *k;
+        float *fp = NULL;
+        int *ip = NULL;
+
+        if (inst->current_page == 1) {
+            /* Control page */
+            k = &KNOB_MAP_P2[idx];
+            /* HPF/LPF are int with clamping (not wrapping) */
+            if (idx == 6) { inst->hpf = clampi(inst->hpf + (int)(delta * k->step), 20, 2000); return; }
+            if (idx == 7) { inst->lpf = clampi(inst->lpf + (int)(delta * k->step), 500, 20000); return; }
+            if (k->is_enum) ip = get_int_param_ptr_p2(inst, idx);
+            else fp = get_float_param_ptr_p2(inst, idx);
+        } else {
+            /* Main page */
+            k = &KNOB_MAP[idx];
+            if (k->is_enum) ip = get_int_param_ptr(inst, idx);
+            else fp = get_float_param_ptr(inst, idx);
+        }
+
+        if (k->is_enum && ip) {
+            int new_val = *ip + (int)delta;
+            if (new_val > (int)k->max) new_val = (int)k->min;
+            if (new_val < (int)k->min) new_val = (int)k->max;
+            *ip = new_val;
+        } else if (fp) {
+            *fp = clampf(*fp + delta * k->step, k->min, k->max);
         }
         return;
     }
@@ -639,8 +665,9 @@ static void set_param(void *instance, const char *key, const char *val) {
     }
     else if (strcmp(key, "pre_gain") == 0)   inst->pre_gain = clampf(atof(val), -12, 12);
     else if (strcmp(key, "post_gain") == 0)  inst->post_gain = clampf(atof(val), -12, 12);
-    else if (strcmp(key, "hpf") == 0)        inst->hpf = clampf(atof(val), 20, 2000);
-    else if (strcmp(key, "lpf") == 0)        inst->lpf = clampf(atof(val), 500, 20000);
+    else if (strcmp(key, "hpf") == 0)        inst->hpf = clampi(atoi(val), 20, 2000);
+    else if (strcmp(key, "lpf") == 0)        inst->lpf = clampi(atoi(val), 500, 20000);
+    else if (strcmp(key, "compress") == 0)  inst->compress = clampf(atof(val), 0, 1);
     else if (strcmp(key, "limiter") == 0) {
         if (strcmp(val, "Off") == 0) inst->limiter = 0;
         else if (strcmp(val, "On") == 0) inst->limiter = 1;
@@ -652,7 +679,7 @@ static void set_param(void *instance, const char *key, const char *val) {
             "onset=%f;frequency=%f;brightness=%f;timbre=%f;decay=%f;"
             "root_note=%d;scale=%d;mix=%f;"
             "chord_drift=%f;resonators=%d;polyphony=%d;octave_range=%d;"
-            "pre_gain=%f;post_gain=%f;hpf=%f;lpf=%f;limiter=%d",
+            "pre_gain=%f;post_gain=%f;hpf=%d;lpf=%d;limiter=%d",
             &inst->onset, &inst->frequency, &inst->brightness, &inst->timbre, &inst->decay,
             &inst->root_note, &inst->scale, &inst->mix,
             &inst->chord_drift, &inst->resonators_idx, &inst->polyphony_idx, &inst->octave_range_idx,
@@ -685,8 +712,9 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
             "{\"key\":\"octave_range\",\"name\":\"Oct Range\",\"type\":\"enum\",\"options\":[\"1\",\"2\",\"3\",\"4\"]},"
             "{\"key\":\"pre_gain\",\"name\":\"Pre Gain\",\"type\":\"float\",\"min\":-12,\"max\":12,\"step\":0.5},"
             "{\"key\":\"post_gain\",\"name\":\"Post Gain\",\"type\":\"float\",\"min\":-12,\"max\":12,\"step\":0.5},"
-            "{\"key\":\"hpf\",\"name\":\"HPF\",\"type\":\"float\",\"min\":20,\"max\":2000,\"step\":1},"
-            "{\"key\":\"lpf\",\"name\":\"LPF\",\"type\":\"float\",\"min\":500,\"max\":20000,\"step\":1},"
+            "{\"key\":\"compress\",\"name\":\"Compress\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01},"
+            "{\"key\":\"hpf\",\"name\":\"HPF\",\"type\":\"int\",\"min\":20,\"max\":2000,\"step\":1},"
+            "{\"key\":\"lpf\",\"name\":\"LPF\",\"type\":\"int\",\"min\":500,\"max\":20000,\"step\":1},"
             "{\"key\":\"limiter\",\"name\":\"Limiter\",\"type\":\"enum\",\"options\":[\"Off\",\"On\"]}"
             "]");
     }
@@ -713,28 +741,49 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
         return snprintf(buf, buf_len, "%d", clampi(inst->octave_range_idx + 1, 1, 4));
     if (strcmp(key, "pre_gain") == 0)    return snprintf(buf, buf_len, "%.1f", inst->pre_gain);
     if (strcmp(key, "post_gain") == 0)   return snprintf(buf, buf_len, "%.1f", inst->post_gain);
-    if (strcmp(key, "hpf") == 0)         return snprintf(buf, buf_len, "%.0f", inst->hpf);
-    if (strcmp(key, "lpf") == 0)         return snprintf(buf, buf_len, "%.0f", inst->lpf);
+    if (strcmp(key, "hpf") == 0)         return snprintf(buf, buf_len, "%d", inst->hpf);
+    if (strcmp(key, "lpf") == 0)         return snprintf(buf, buf_len, "%d", inst->lpf);
+    if (strcmp(key, "compress") == 0)  return snprintf(buf, buf_len, "%.2f", inst->compress);
     if (strcmp(key, "limiter") == 0)
         return snprintf(buf, buf_len, "%s", LIMITER_NAMES[clampi(inst->limiter, 0, 1)]);
 
-    /* ── knob_N_name ── */
+    /* ── knob_N_name (page-aware) ── */
     if (strncmp(key, "knob_", 5) == 0 && strstr(key, "_name")) {
         int idx = atoi(key + 5) - 1;
-        if (idx >= 0 && idx < 8 && KNOB_MAP[idx].label)
-            return snprintf(buf, buf_len, "%s", KNOB_MAP[idx].label);
+        if (idx >= 0 && idx < 8) {
+            const knob_def_t *k = (inst->current_page == 1) ? &KNOB_MAP_P2[idx] : &KNOB_MAP[idx];
+            if (k->label) return snprintf(buf, buf_len, "%s", k->label);
+        }
         return 0;
     }
 
-    /* ── knob_N_value ── */
+    /* ── knob_N_value (page-aware) ── */
     if (strncmp(key, "knob_", 5) == 0 && strstr(key, "_value")) {
         int idx = atoi(key + 5) - 1;
-        if (idx >= 0 && idx < 8 && KNOB_MAP[idx].key) {
-            if (KNOB_MAP[idx].is_enum) {
-                return get_param(instance, KNOB_MAP[idx].key, buf, buf_len);
+        if (idx >= 0 && idx < 8) {
+            const knob_def_t *k;
+            if (inst->current_page == 1) {
+                k = &KNOB_MAP_P2[idx];
+                /* HPF/LPF are int — display directly */
+                if (idx == 6) return snprintf(buf, buf_len, "%d Hz", inst->hpf);
+                if (idx == 7) return snprintf(buf, buf_len, "%d Hz", inst->lpf);
+                if (k->is_enum) {
+                    return get_param(instance, k->key, buf, buf_len);
+                } else {
+                    float *p = get_float_param_ptr_p2(inst, idx);
+                    if (p) {
+                        if (idx == 4 || idx == 5) return snprintf(buf, buf_len, "%.1f dB", *p);
+                        return snprintf(buf, buf_len, "%d%%", (int)(*p * 100));
+                    }
+                }
             } else {
-                float *p = get_float_param_ptr(inst, idx);
-                if (p) return snprintf(buf, buf_len, "%d%%", (int)(*p * 100));
+                k = &KNOB_MAP[idx];
+                if (k->is_enum) {
+                    return get_param(instance, k->key, buf, buf_len);
+                } else {
+                    float *p = get_float_param_ptr(inst, idx);
+                    if (p) return snprintf(buf, buf_len, "%d%%", (int)(*p * 100));
+                }
             }
         }
         return 0;
@@ -746,11 +795,11 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
             "onset=%.6f;frequency=%.6f;brightness=%.6f;timbre=%.6f;decay=%.6f;"
             "root_note=%d;scale=%d;mix=%.6f;"
             "chord_drift=%.6f;resonators=%d;polyphony=%d;octave_range=%d;"
-            "pre_gain=%.6f;post_gain=%.6f;hpf=%.6f;lpf=%.6f;limiter=%d",
+            "pre_gain=%.6f;post_gain=%.6f;hpf=%d;lpf=%d;limiter=%d;compress=%.6f",
             inst->onset, inst->frequency, inst->brightness, inst->timbre, inst->decay,
             inst->root_note, inst->scale, inst->mix,
             inst->chord_drift, inst->resonators_idx, inst->polyphony_idx, inst->octave_range_idx,
-            inst->pre_gain, inst->post_gain, inst->hpf, inst->lpf, inst->limiter);
+            inst->pre_gain, inst->post_gain, inst->hpf, inst->lpf, inst->limiter, inst->compress);
     }
 
     return -1; /* unknown key */
@@ -763,7 +812,7 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
     if (!inst || frames <= 0) return;
     if (frames > 128) frames = 128;
 
-    /* Derived params */
+    /* ── Derived params ─────────────────────────────────────────────────── */
     float pre_gain_lin = powf(10.0f, inst->pre_gain / 20.0f);
     float post_gain_lin = powf(10.0f, inst->post_gain / 20.0f);
     int num_voices = POLYPHONY_OPTIONS[clampi(inst->polyphony_idx, 0, 2)];
@@ -772,19 +821,34 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
 
     float decay_seconds = 0.05f * powf(200.0f, inst->decay);
     float decay_rate = expf(-1.0f / (decay_seconds * (float)SAMPLE_RATE));
-    float onset_threshold = inst->onset * 50.0f + 0.5f;
-    float yin_threshold = 0.02f + (1.0f - inst->frequency) * 0.48f;
+    /* Onset sensitivity: ratio above per-band running average to trigger.
+     * 0% = 1.0x (triggers on everything)
+     * 100% = 6.0x (only hard transients) */
+    float onset_sensitivity = 1.0f + inst->onset * 5.0f;
+    /* Frequency knob: band selectivity.
+     * 0.0 = all bands map to root note (unison resonance)
+     * 1.0 = each band maps to its natural frequency in the scale (full separation)
+     * This is what lets a kick trigger a low note and a hihat trigger a high note. */
+    float freq_selectivity = inst->frequency;
 
-    /* Precompute once per block — NOT per sample */
+    /* ── Precompute per-block constants ──────────────────────────────────── */
     float mix_angle = inst->mix * 1.5707963f;
     float dry_gain = cosf(mix_angle);
     float wet_gain = sinf(mix_angle);
-    onepole_set_freq(&inst->hp_l, inst->hpf);
-    onepole_set_freq(&inst->hp_r, inst->hpf);
-    onepole_set_freq(&inst->lp_l, inst->lpf);
-    onepole_set_freq(&inst->lp_r, inst->lpf);
+    /* Smooth HPF/LPF targets (~10ms smoothing at 44.1k/128 = 345 blocks/s)
+     * coeff ≈ 1 - exp(-1 / (0.010 * 345)) ≈ 0.25 */
+    float filt_smooth = 0.25f;
+    inst->hpf_smooth += filt_smooth * ((float)inst->hpf - inst->hpf_smooth);
+    inst->lpf_smooth += filt_smooth * ((float)inst->lpf - inst->lpf_smooth);
+    onepole_set_freq(&inst->hp_l, inst->hpf_smooth);
+    onepole_set_freq(&inst->hp_r, inst->hpf_smooth);
+    onepole_set_freq(&inst->lp_l, inst->lpf_smooth);
+    onepole_set_freq(&inst->lp_r, inst->lpf_smooth);
 
-    /* --- Convert input to mono float and feed analysis buffers --- */
+    /* Root note MIDI reference (octave 3 = C3..B3) */
+    float root_midi = (float)(48 + inst->root_note);
+
+    /* ── Convert input to mono float ────────────────────────────────────── */
     float mono[BLOCK_SIZE];
     for (int i = 0; i < frames; i++) {
         float l = (float)audio_buf[i * 2] / 32768.0f * pre_gain_lin;
@@ -792,13 +856,7 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
         mono[i] = (l + r) * 0.5f;
     }
 
-    /* Feed YIN buffer */
-    for (int i = 0; i < frames; i++) {
-        inst->yin.buffer[inst->yin.write_pos] = mono[i];
-        inst->yin.write_pos = (inst->yin.write_pos + 1) % YIN_BUFFER_SIZE;
-    }
-
-    /* Feed FFT buffer */
+    /* ── Feed FFT buffer ────────────────────────────────────────────────── */
     for (int i = 0; i < frames; i++) {
         inst->mono_buffer[inst->mono_write_pos] = mono[i];
         inst->mono_write_pos++;
@@ -808,109 +866,163 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
         }
     }
 
-    /* --- Run analysis when FFT buffer is full --- */
-    inst->onset_detected = 0;
+    /* ── Measure input RMS for excitation gain ──────────────────────────── */
+    float rms_sum = 0.0f;
+    for (int i = 0; i < frames; i++) rms_sum += mono[i] * mono[i];
+    float block_rms = sqrtf(rms_sum / (float)frames);
+    inst->input_rms = inst->input_rms * 0.9f + block_rms * 0.1f;
+
+    /* ── Multiband analysis (runs when FFT buffer is full) ──────────────── */
+    /* Clear per-frame band onset flags */
+    for (int b = 0; b < NUM_BANDS; b++) inst->band_onset[b] = 0;
 
     if (inst->fft_ready) {
         inst->fft_ready = 0;
 
-        /* Window and load FFT buffers */
+        /* Window and FFT */
         for (int i = 0; i < FFT_SIZE; i++) {
             inst->fft_re[i] = inst->mono_buffer[i] * inst->fft_window[i];
             inst->fft_im[i] = 0.0f;
         }
-
         fft_forward(inst->fft_re, inst->fft_im, FFT_SIZE);
 
-        /* Compute magnitude spectrum */
-        float magnitude[FFT_SIZE / 2];
+        /* Compute magnitude² spectrum — skip sqrtf to save 256 sqrtf calls per frame */
+        float mag_sq[FFT_SIZE / 2];
         for (int i = 0; i < FFT_SIZE / 2; i++) {
-            magnitude[i] = sqrtf(inst->fft_re[i] * inst->fft_re[i] +
-                                  inst->fft_im[i] * inst->fft_im[i]);
+            mag_sq[i] = inst->fft_re[i] * inst->fft_re[i] +
+                        inst->fft_im[i] * inst->fft_im[i];
         }
 
-        /* --- Spectral flux onset detection --- */
-        float flux = 0.0f;
-        for (int i = 0; i < FFT_SIZE / 2; i++) {
-            float diff = magnitude[i] - inst->prev_magnitude[i];
-            if (diff > 0.0f) flux += diff;
-        }
-        if (flux > onset_threshold) {
-            inst->onset_detected = 1;
-        }
-
-        /* Save magnitudes for next frame */
-        memcpy(inst->prev_magnitude, magnitude, sizeof(float) * FFT_SIZE / 2);
-
-        /* --- Spectral flatness --- */
-        float log_sum = 0.0f;
-        float arith_sum = 0.0f;
-        int count = 0;
-        for (int i = 1; i < FFT_SIZE / 2; i++) { /* skip DC */
-            if (magnitude[i] > 1e-10f) {
-                log_sum += logf(magnitude[i]);
-                arith_sum += magnitude[i];
-                count++;
+        /* ── Per-band energy + onset detection ─────────────────────────── */
+        for (int b = 0; b < NUM_BANDS; b++) {
+            float energy = 0.0f;
+            int start = BAND_BIN_START[b];
+            int end = BAND_BIN_END[b];
+            if (end > FFT_SIZE / 2) end = FFT_SIZE / 2;
+            for (int i = start; i < end; i++) {
+                energy += mag_sq[i]; /* using mag² — still works for relative comparison */
             }
+
+            /* Per-band spectral flux (positive differences only) */
+            float flux = energy - inst->band_prev_energy[b];
+            if (flux < 0.0f) flux = 0.0f;
+
+            /* Normalize by band energy for level-independence */
+            float norm_flux = (energy > 1e-10f) ? flux / energy : 0.0f;
+
+            /* Update per-band running average */
+            inst->band_flux_avg[b] = inst->band_flux_avg[b] * 0.93f + norm_flux * 0.07f;
+
+            /* Onset: flux above adaptive threshold AND minimum energy gate */
+            float min_energy = 1e-6f; /* silence gate (mag² scale) */
+            if (norm_flux > inst->band_flux_avg[b] * onset_sensitivity
+                && norm_flux > 0.02f && energy > min_energy) {
+                inst->band_onset[b] = 1;
+            }
+
+            inst->band_energy[b] = energy;
+            inst->band_prev_energy[b] = energy;
         }
-        if (count > 0 && arith_sum > 1e-10f) {
-            float geo_mean = expf(log_sum / (float)count);
-            float arith_mean = arith_sum / (float)count;
-            inst->spectral_flatness = clampf(geo_mean / arith_mean, 0.0f, 1.0f);
-        } else {
-            inst->spectral_flatness = 0.0f;
+
+        /* ── Spectral flatness (simplified — use band energy variance) ─── */
+        /* Instead of expensive log/exp geometric mean, estimate flatness from
+         * the ratio of min-band to max-band energy. Fast and good enough. */
+        {
+            float emin = 1e30f, emax = 0.0f;
+            for (int b = 0; b < NUM_BANDS; b++) {
+                if (inst->band_energy[b] > emax) emax = inst->band_energy[b];
+                if (inst->band_energy[b] < emin) emin = inst->band_energy[b];
+            }
+            /* Flat spectrum (noise): emin ≈ emax → ratio ≈ 1
+             * Tonal spectrum: one band dominates → ratio ≈ 0 */
+            inst->spectral_flatness = (emax > 1e-10f) ? clampf(emin / emax, 0.0f, 1.0f) : 0.0f;
         }
     }
 
-    /* --- YIN pitch detection (throttled — expensive ~1M ops) --- */
-    inst->yin_blocks_since_last++;
-    if (inst->yin_blocks_since_last >= 8) {
-        inst->yin_blocks_since_last = 0;
-        /* Reorder circular buffer to contiguous for analysis */
-        int wp = inst->yin.write_pos;
-        for (int i = 0; i < YIN_BUFFER_SIZE; i++) {
-            inst->yin_temp[i] = inst->yin.buffer[(wp + i) % YIN_BUFFER_SIZE];
-        }
-        memcpy(inst->yin.buffer, inst->yin_temp, sizeof(inst->yin_temp));
-        inst->yin.write_pos = 0;
-        yin_detect(&inst->yin, yin_threshold, &inst->detected_freq, &inst->detected_confidence);
-    }
-
-    /* --- Compute final brightness from flatness + manual offset --- */
-    /* Inverse flatness: tonal (flatness=0) → bright, noisy (flatness=1) → dull */
+    /* ── Compute brightness + Q ─────────────────────────────────────────── */
     float auto_brightness = 1.0f - inst->spectral_flatness;
     float brightness_final = clampf(auto_brightness + (inst->brightness - 0.5f), 0.0f, 1.0f);
-    /* Map to Q factor: bright (1.0) → high Q (~50), dull (0.0) → low Q (~2) */
-    float q_value = 2.0f + brightness_final * 48.0f;
+    /* Q: exponential mapping for more dramatic range.
+     * 0.0 → Q=3 (wide, warm, muted)  1.0 → Q=80 (narrow, ringing, bright) */
+    float q_value = 3.0f * powf(80.0f / 3.0f, brightness_final);
+    /* Brightness also boosts resonator output: dull=0.5x, bright=2x */
+    float brightness_gain = 0.5f + brightness_final * 1.5f;
 
-    /* --- Voice allocation on onset --- */
-    if (inst->onset_detected && inst->detected_freq > 20.0f && inst->detected_confidence > 0.1f) {
-        float midi_note = freq_to_midi(inst->detected_freq);
-        float quantized = quantize_to_scale(midi_note, inst->root_note, inst->scale);
-        quantized = apply_chord_drift(quantized, inst->chord_drift, &inst->rng_state);
+    /* ── Voice allocation from multiband onsets ─────────────────────────── */
+    /* Collect triggered bands, sorted by energy (strongest first).
+     * Allocate up to num_voices from the strongest band onsets. */
+    {
+        int triggered[NUM_BANDS];
+        float triggered_energy[NUM_BANDS];
+        int num_triggered = 0;
 
-        /* Allocate voice (round-robin with steal) */
-        int vi = inst->next_voice % num_voices;
-        inst->next_voice = (inst->next_voice + 1) % num_voices;
+        for (int b = 0; b < NUM_BANDS; b++) {
+            if (inst->band_onset[b]) {
+                triggered[num_triggered] = b;
+                triggered_energy[num_triggered] = inst->band_energy[b];
+                num_triggered++;
+            }
+        }
 
-        voice_t *v = &inst->voices[vi];
-        v->active = 1;
-        v->midi_note = quantized;
-        v->amplitude = 1.0f;
-        v->decay_rate = decay_rate;
+        /* Simple insertion sort by energy (descending) — max 8 elements */
+        for (int i = 1; i < num_triggered; i++) {
+            for (int j = i; j > 0 && triggered_energy[j] > triggered_energy[j-1]; j--) {
+                float te = triggered_energy[j]; triggered_energy[j] = triggered_energy[j-1]; triggered_energy[j-1] = te;
+                int tb = triggered[j]; triggered[j] = triggered[j-1]; triggered[j-1] = tb;
+            }
+        }
 
-        /* Tune resonator bank (precomputes SVF coefficients) */
-        tune_resonator_bank(v, quantized, inst->root_note, inst->scale,
-                            res_count, oct_range, inst->timbre, q_value);
+        /* Allocate up to num_voices from strongest triggers (cap at 2 per frame to save CPU) */
+        int max_per_frame = num_voices < 2 ? num_voices : 2;
+        int to_alloc = num_triggered < max_per_frame ? num_triggered : max_per_frame;
+        for (int t = 0; t < to_alloc; t++) {
+            int band = triggered[t];
 
-        /* Clear filter state for new note to avoid clicks */
-        for (int r = 0; r < v->num_resonators; r++) {
-            v->resonators[r].lp = 0.0f;
-            v->resonators[r].bp = 0.0f;
+            /* Map band center frequency to MIDI note.
+             * freq_selectivity controls how much the band frequency matters:
+             *   0.0 → all bands produce root_midi (unison)
+             *   1.0 → each band maps to its natural frequency (full spread) */
+            float band_midi = freq_to_midi(BAND_CENTER_HZ[band]);
+            float target_midi = root_midi + freq_selectivity * (band_midi - root_midi);
+
+            /* Quantize to scale + drift */
+            float quantized = quantize_to_scale(target_midi, inst->root_note, inst->scale);
+            quantized = apply_chord_drift(quantized, inst->chord_drift, &inst->rng_state);
+
+            /* Allocate voice (round-robin with steal) */
+            int vi = inst->next_voice % num_voices;
+            inst->next_voice = (inst->next_voice + 1) % num_voices;
+
+            voice_t *v = &inst->voices[vi];
+            v->active = 1;
+            v->midi_note = quantized;
+            v->amplitude = 1.0f;
+            v->decay_rate = decay_rate;
+
+            tune_resonator_bank(v, quantized, inst->root_note, inst->scale,
+                                res_count, oct_range, inst->timbre, q_value);
+
+            /* Clear filter state for new note */
+            for (int r = 0; r < v->num_resonators; r++) {
+                v->resonators[r].lp = 0.0f;
+                v->resonators[r].bp = 0.0f;
+            }
         }
     }
 
-    /* --- Process audio through resonator bank --- */
+    /* ── Update active voices with current timbre + brightness (real-time) ── */
+    /* Without this, turning Timbre/Brightness only affects NEW notes.
+     * Re-tune all active voices every block so knobs respond immediately. */
+    for (int vi = 0; vi < MAX_VOICES; vi++) {
+        voice_t *v = &inst->voices[vi];
+        if (!v->active) continue;
+        tune_resonator_bank(v, v->midi_note, inst->root_note, inst->scale,
+                            res_count, oct_range, inst->timbre, q_value);
+        /* NOTE: do NOT clear filter state here — that would cause clicks.
+         * svf_update_coeff just updates fc/fb, filter state (lp/bp) continues. */
+    }
+
+    /* ── Process audio through resonator bank ───────────────────────────── */
     float wet_l_buf[BLOCK_SIZE];
     float wet_r_buf[BLOCK_SIZE];
     memset(wet_l_buf, 0, sizeof(wet_l_buf));
@@ -920,15 +1032,18 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
         voice_t *v = &inst->voices[vi];
         if (!v->active) continue;
 
-        /* Precompute per-voice constants outside sample loop */
         float pan = 0.5f + (float)(vi - num_voices / 2) * 0.15f;
         pan = clampf(pan, 0.0f, 1.0f);
         float pan_l = 1.0f - pan;
         float pan_r = pan;
-        float inv_res = (v->num_resonators > 0) ? 1.0f / (float)v->num_resonators : 0.0f;
+        /* With Q-normalized SVF, output level is stable regardless of Q.
+         * Scale by num_resonators and apply brightness gain for tonal control. */
+        float res_gain = (v->num_resonators > 0) ? 3.0f / sqrtf((float)v->num_resonators) : 0.0f;
+        res_gain *= brightness_gain;
+        float excitation_gain = 1.0f + inst->input_rms * 2.0f;
 
         for (int i = 0; i < frames; i++) {
-            float input_sample = mono[i];
+            float input_sample = mono[i] * excitation_gain;
             float resonator_sum = 0.0f;
 
             for (int r = 0; r < v->num_resonators; r++) {
@@ -937,7 +1052,7 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
                 }
             }
 
-            resonator_sum *= inv_res;
+            resonator_sum *= res_gain;
             float voiced = resonator_sum * v->amplitude;
             v->amplitude *= v->decay_rate;
 
@@ -945,14 +1060,38 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
             wet_r_buf[i] += voiced * pan_r;
         }
 
-        /* Deactivate if envelope has decayed — flush denormals */
         if (v->amplitude < 0.0001f) {
             v->active = 0;
             v->amplitude = 0.0f;
         }
     }
 
-    /* --- Output chain: HPF → LPF → Limiter → Post-gain → Mix --- */
+    /* ── RMS compressor (Dissolver-style, computed per-block for CPU) ────── */
+    float comp_gain_l = 1.0f, comp_gain_r = 1.0f;
+    if (inst->compress > 0.01f) {
+        /* Compute block RMS of wet signal */
+        float sum_l = 0.0f, sum_r = 0.0f;
+        for (int i = 0; i < frames; i++) {
+            sum_l += wet_l_buf[i] * wet_l_buf[i];
+            sum_r += wet_r_buf[i] * wet_r_buf[i];
+        }
+        float rms_l = sqrtf(sum_l / (float)frames);
+        float rms_r = sqrtf(sum_r / (float)frames);
+        /* Smooth RMS envelope across blocks (~10ms) */
+        inst->comp_env_l = inst->comp_env_l * 0.7f + rms_l * 0.3f;
+        inst->comp_env_r = inst->comp_env_r * 0.7f + rms_r * 0.3f;
+        /* gain = RMS^(-power), capped */
+        if (inst->comp_env_l > 1e-6f) {
+            comp_gain_l = powf(inst->comp_env_l, -inst->compress);
+            if (comp_gain_l > 20.0f) comp_gain_l = 20.0f;
+        }
+        if (inst->comp_env_r > 1e-6f) {
+            comp_gain_r = powf(inst->comp_env_r, -inst->compress);
+            if (comp_gain_r > 20.0f) comp_gain_r = 20.0f;
+        }
+    }
+
+    /* ── Output chain: HPF → LPF → Compress → Limiter → Post-gain → Mix ── */
     for (int i = 0; i < frames; i++) {
         float dry_l = (float)audio_buf[i * 2] / 32768.0f;
         float dry_r = (float)audio_buf[i * 2 + 1] / 32768.0f;
@@ -960,37 +1099,36 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
         float wl = wet_l_buf[i];
         float wr = wet_r_buf[i];
 
-        /* HPF */
         if (inst->hpf > 20.5f) {
             wl = onepole_hp(&inst->hp_l, wl);
             wr = onepole_hp(&inst->hp_r, wr);
         }
-
-        /* LPF */
         if (inst->lpf < 19500.0f) {
             wl = onepole_lp(&inst->lp_l, wl);
             wr = onepole_lp(&inst->lp_r, wr);
         }
 
-        /* Limiter */
+        /* Apply compressor gain */
+        wl *= comp_gain_l;
+        wr *= comp_gain_r;
+
         if (inst->limiter) {
             wl = tape_soft_clip(wl);
             wr = tape_soft_clip(wr);
         }
 
-        /* Post-gain */
         wl *= post_gain_lin;
         wr *= post_gain_lin;
 
-        /* Equal-power dry/wet crossfade */
         float out_l = dry_gain * dry_l + wet_gain * wl;
         float out_r = dry_gain * dry_r + wet_gain * wr;
 
-        /* Clamp and write back */
         int32_t il = (int32_t)(out_l * 32767.0f);
         int32_t ir = (int32_t)(out_r * 32767.0f);
-        if (il >  32767) il =  32767; if (il < -32768) il = -32768;
-        if (ir >  32767) ir =  32767; if (ir < -32768) ir = -32768;
+        if (il > 32767) il = 32767;
+        if (il < -32768) il = -32768;
+        if (ir > 32767) ir = 32767;
+        if (ir < -32768) ir = -32768;
         audio_buf[i * 2]     = (int16_t)il;
         audio_buf[i * 2 + 1] = (int16_t)ir;
     }

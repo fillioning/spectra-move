@@ -26,29 +26,30 @@
                     "label": "Spectra",
                     "knobs": ["onset", "frequency", "brightness", "timbre", "decay", "root_note", "scale", "mix"],
                     "params": [
-                        { "key": "onset",      "label": "Onset",      "type": "float", "min": 0, "max": 1, "default": 0.3, "step": 0.01 },
-                        { "key": "frequency",  "label": "Frequency",  "type": "float", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
-                        { "key": "brightness", "label": "Brightness", "type": "float", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
+                        { "key": "onset",      "label": "Onset",      "type": "float", "min": 0, "max": 1, "default": 0.7, "step": 0.01 },
+                        { "key": "frequency",  "label": "Frequency",  "type": "float", "min": 0, "max": 1, "default": 0.3, "step": 0.01 },
+                        { "key": "brightness", "label": "Brightness", "type": "float", "min": 0, "max": 1, "default": 0.3, "step": 0.01 },
                         { "key": "timbre",     "label": "Timbre",     "type": "float", "min": 0, "max": 1, "default": 0.0, "step": 0.01 },
                         { "key": "decay",      "label": "Decay",      "type": "float", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
                         { "key": "root_note",  "label": "Root",       "type": "enum",  "options": ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"], "default": 0 },
                         { "key": "scale",      "label": "Scale",      "type": "enum",  "options": ["Major","Nat Minor","Harm Minor","Mel Minor","Dorian","Phrygian","Lydian","Mixolydian","Penta Maj","Penta Min","Blues","Chromatic"], "default": 0 },
-                        { "key": "mix",        "label": "Mix",        "type": "float", "min": 0, "max": 1, "default": 0.5, "step": 0.01 }
+                        { "key": "mix",        "label": "Mix",        "type": "float", "min": 0, "max": 1, "default": 1.0, "step": 0.01 }
                     ]
                 },
                 "Control": {
                     "label": "Control",
-                    "knobs": [],
+                    "knobs": ["chord_drift", "resonators", "octave_range", "compress", "pre_gain", "post_gain", "hpf", "lpf"],
                     "params": [
                         { "key": "chord_drift",  "label": "Chord Drift", "type": "float", "min": 0, "max": 1, "default": 0.0, "step": 0.01 },
-                        { "key": "resonators",   "label": "Resonators",  "type": "enum",  "options": ["5","7","12"], "default": 1 },
-                        { "key": "polyphony",    "label": "Polyphony",   "type": "enum",  "options": ["1","2","4"], "default": 1 },
-                        { "key": "octave_range", "label": "Oct Range",   "type": "enum",  "options": ["1","2","3","4"], "default": 3 },
+                        { "key": "resonators",   "label": "Resonators",  "type": "enum",  "options": ["5","7","12"], "default": 2 },
+                        { "key": "octave_range", "label": "Oct Range",   "type": "enum",  "options": ["1","2","3","4"], "default": 1 },
+                        { "key": "compress",     "label": "Compress",    "type": "float", "min": 0, "max": 1, "default": 0.2, "step": 0.01 },
                         { "key": "pre_gain",     "label": "Pre Gain",    "type": "float", "min": -12, "max": 12, "default": 0.0, "step": 0.5 },
                         { "key": "post_gain",    "label": "Post Gain",   "type": "float", "min": -12, "max": 12, "default": 0.0, "step": 0.5 },
-                        { "key": "hpf",          "label": "HPF",         "type": "float", "min": 20, "max": 2000, "default": 20.0, "step": 1 },
-                        { "key": "lpf",          "label": "LPF",         "type": "float", "min": 500, "max": 20000, "default": 20000.0, "step": 1 },
-                        { "key": "limiter",      "label": "Limiter",     "type": "enum",  "options": ["Off","On"], "default": 1 }
+                        { "key": "hpf",          "label": "HPF",         "type": "int", "min": 20, "max": 2000, "default": 20, "step": 1 },
+                        { "key": "lpf",          "label": "LPF",         "type": "int", "min": 500, "max": 20000, "default": 20000, "step": 1 },
+                        { "key": "limiter",      "label": "Limiter",     "type": "enum",  "options": ["Off","On"], "default": 1 },
+                        { "key": "polyphony",    "label": "Polyphony",   "type": "enum",  "options": ["1","2","4"], "default": 2 }
                     ]
                 }
             }
