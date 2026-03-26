@@ -3,28 +3,28 @@ set -e
 
 MODULE_ID="spectra"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$SCRIPT_DIR/.."
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+SRC_DIR="$PROJECT_DIR/src"
+OUT_DIR="$PROJECT_DIR/dist/$MODULE_ID"
 
-echo "Building $MODULE_ID for ARM64 (aarch64)..."
+# Cross-compiler prefix (Docker or local toolchain)
+CC="${CROSS_PREFIX:-aarch64-linux-gnu-}gcc"
 
-docker build -t ${MODULE_ID}-builder -f "$ROOT/scripts/Dockerfile" "$ROOT"
+echo "=== Building Spectra for Ableton Move (ARM64) ==="
+echo "Compiler: $CC"
 
-docker run --rm \
-  -v "$ROOT:/build" \
-  ${MODULE_ID}-builder \
-  bash -c "
-    dos2unix /build/src/dsp/*.c /build/src/dsp/*.h 2>/dev/null || true
-    mkdir -p /build/dist/$MODULE_ID
-    aarch64-linux-gnu-gcc \
-      -O2 -shared -fPIC -ffast-math \
-      -o /build/dist/$MODULE_ID/$MODULE_ID.so \
-      /build/src/dsp/$MODULE_ID.c \
-      -lm
-    cp /build/src/module.json /build/dist/$MODULE_ID/module.json
-    cd /build/dist && tar -czf ${MODULE_ID}-module.tar.gz $MODULE_ID/
-    echo '=== Build complete ==='
-    ls -la /build/dist/$MODULE_ID/
-  "
+mkdir -p "$OUT_DIR"
 
-echo "Built: dist/$MODULE_ID/"
-echo "Tarball: dist/${MODULE_ID}-module.tar.gz"
+# Compile spectra.c → shared library
+echo "  CC src/dsp/spectra.c"
+$CC -O2 -shared -fPIC -ffast-math \
+    -o "$OUT_DIR/$MODULE_ID.so" \
+    "$SRC_DIR/dsp/$MODULE_ID.c" \
+    -lm \
+    -Wall -Wextra -Wno-unused-parameter
+
+# Copy module files
+cp "$PROJECT_DIR/module.json" "$OUT_DIR/"
+
+echo "=== Build complete: $OUT_DIR/$MODULE_ID.so ==="
+ls -la "$OUT_DIR/"
