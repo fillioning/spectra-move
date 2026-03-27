@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -45,8 +48,9 @@ jobs:
       - name: Commit release.json
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          git fetch origin main
-          git checkout -f main
+          BRANCH=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+          git fetch origin "$BRANCH"
+          git checkout -f "$BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           cat > release.json << EOF
@@ -57,4 +61,4 @@ jobs:
           EOF
           git add release.json
           git commit -m "ci: update release.json for ${{ github.ref_name }}" || echo "No changes to commit"
-          git push origin main
+          git push origin "$BRANCH"
