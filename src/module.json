@@ -2,7 +2,7 @@
     "id": "spectra",
     "name": "Spectra",
     "abbrev": "SPCTRA",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Multiband spectral resonator with pitch tracking and scale quantization",
     "author": "fillioning",
     "dsp": "spectra.so",
@@ -53,6 +53,26 @@
                     ]
                 }
             }
-        }
+        },
+        "chain_params": [
+            {"key": "onset",        "name": "Onset",       "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "frequency",    "name": "Frequency",   "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "brightness",   "name": "Brightness",  "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "timbre",       "name": "Timbre",      "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "decay",        "name": "Decay",       "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "root_note",    "name": "Root",        "type": "enum",  "options": ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]},
+            {"key": "scale",        "name": "Scale",       "type": "enum",  "options": ["Major","Nat Minor","Harm Minor","Mel Minor","Dorian","Phrygian","Lydian","Mixolydian","Penta Maj","Penta Min","Blues","Chromatic"]},
+            {"key": "mix",          "name": "Mix",         "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "chord_drift",  "name": "Chord Drift", "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "resonators",   "name": "Resonators",  "type": "enum",  "options": ["5","7","12"]},
+            {"key": "octave_range", "name": "Oct Range",   "type": "enum",  "options": ["1","2","3","4"]},
+            {"key": "compress",     "name": "Compress",    "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "pre_gain",     "name": "Pre Gain",    "type": "float", "min": -12,  "max": 12,    "step": 0.5},
+            {"key": "post_gain",    "name": "Post Gain",   "type": "float", "min": -12,  "max": 12,    "step": 0.5},
+            {"key": "hpf",          "name": "HPF",         "type": "int",   "min": 20,   "max": 2000,  "step": 1},
+            {"key": "lpf",          "name": "LPF",         "type": "int",   "min": 500,  "max": 20000, "step": 1},
+            {"key": "limiter",      "name": "Limiter",     "type": "enum",  "options": ["Off","On"]},
+            {"key": "polyphony",    "name": "Polyphony",   "type": "enum",  "options": ["1","2","4"]}
+        ]
     }
 }
