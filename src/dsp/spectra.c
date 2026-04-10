@@ -135,6 +135,103 @@ static const int POLYPHONY_OPTIONS[3] = { 1, 2, 4 };
 #define NUM_LIMITER_OPTIONS 2
 static const char *LIMITER_NAMES[NUM_LIMITER_OPTIONS] = { "Off", "On" };
 
+/* Arp pattern names */
+#define NUM_ARP_PATTERNS 5
+static const char *ARP_PATTERN_NAMES[NUM_ARP_PATTERNS] = { "Off", "Up", "Down", "Random", "Chord" };
+
+/* Arp sync mode names */
+#define NUM_ARP_SYNC 2
+static const char *ARP_SYNC_NAMES[NUM_ARP_SYNC] = { "Free", "Sync" };
+
+/* Motion LFO shape names */
+#define NUM_MOTION_SHAPES 4
+static const char *MOTION_SHAPE_NAMES[NUM_MOTION_SHAPES] = { "Sine", "Triangle", "Square", "S&H" };
+
+/* ── Preset structure ─────────────────────────────────────────────────────────── */
+
+typedef struct {
+    const char *name;
+    float onset, frequency, brightness, timbre, decay;
+    int root_note, scale;
+    float mix;
+    float chord_drift;
+    int resonators_idx, polyphony_idx, octave_range_idx;
+    float pre_gain, post_gain;
+    int hpf, lpf, limiter, compress;
+    float arp_rate;
+    int arp_pattern, arp_sync;
+    float drift;
+    float motion_rate, motion_depth;
+    int motion_shape;
+    float scoop;
+} spectra_preset_t;
+
+#define NUM_PRESETS 30
+
+/* 30 curated presets */
+static const spectra_preset_t PRESETS[NUM_PRESETS] = {
+    /* 0: Bell resonator */
+    { "Bell", 0.9f, 0.7f, 0.8f, 0.0f, 0.3f, 0, 0, 1.0f, 0.0f, 2, 2, 1, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.5f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 1: Pad resonator */
+    { "Pad", 0.5f, 0.5f, 0.6f, 1.0f, 0.8f, 0, 8, 0.8f, 0.0f, 1, 2, 3, -3.0f, 0.0f, 40, 10000, 1, 0.3f, 0.3f, 0, 0.0f, 0.2f, 0.5f, 0, 0.0f },
+    /* 2: Arp up */
+    { "Arp Up", 0.7f, 0.4f, 0.5f, 0.0f, 0.2f, 0, 0, 1.0f, 0.0f, 2, 2, 1, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.6f, 1, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 3: Arp random */
+    { "Arp Rnd", 0.8f, 0.3f, 0.6f, 0.0f, 0.15f, 0, 11, 1.0f, 0.0f, 2, 2, 1, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.7f, 3, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 4: Drifter */
+    { "Drifter", 0.6f, 0.5f, 0.4f, 0.5f, 0.6f, 0, 0, 1.0f, 0.0f, 2, 2, 2, 0.0f, 0.0f, 20, 20000, 1, 0.2f, 0.5f, 0, 0.0f, 0.6f, 0.0f, 0, 0.0f },
+    /* 5: Shimmer */
+    { "Shimmer", 0.3f, 0.8f, 0.9f, 0.8f, 0.9f, 9, 4, 0.9f, 0.0f, 1, 2, 3, 3.0f, 0.0f, 100, 18000, 1, 0.05f, 0.3f, 0, 0.0f, 0.0f, 0.7f, 1, 0.3f },
+    /* 6: Drone bass */
+    { "Drone Bass", 0.4f, 0.2f, 0.3f, 0.0f, 0.95f, 0, 0, 0.7f, 0.0f, 2, 1, 1, -6.0f, 0.0f, 20, 800, 1, 0.2f, 0.4f, 4, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 7: Tremolo */
+    { "Tremolo", 0.7f, 0.5f, 0.5f, 0.0f, 0.4f, 0, 0, 1.0f, 0.0f, 2, 2, 2, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.5f, 0, 0.0f, 0.7f, 0.8f, 0, 0.0f },
+    /* 8: Bells chord */
+    { "Bells", 0.8f, 0.6f, 0.7f, 0.0f, 0.5f, 5, 0, 1.0f, 0.0f, 1, 2, 2, 2.0f, 0.0f, 20, 20000, 1, 0.15f, 0.5f, 4, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 9: Scooped */
+    { "Scooped", 0.7f, 0.5f, 0.4f, 0.0f, 0.3f, 0, 0, 1.0f, 0.0f, 2, 2, 1, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.5f, 0, 0.0f, 0.0f, 0.0f, 0, 0.8f },
+    /* 10: Evolving */
+    { "Evolving", 0.5f, 0.5f, 0.5f, 0.5f, 0.7f, 0, 0, 1.0f, 0.0f, 2, 2, 2, 0.0f, 0.0f, 20, 20000, 1, 0.2f, 0.5f, 0, 0.0f, 0.3f, 0.4f, 1, 0.2f },
+    /* 11: Stutter */
+    { "Stutter", 0.9f, 0.4f, 0.6f, 0.0f, 0.1f, 0, 11, 1.0f, 0.0f, 2, 3, 1, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.8f, 2, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 12: Resonant */
+    { "Resonant", 0.6f, 0.6f, 0.9f, 0.0f, 0.4f, 0, 0, 1.0f, 0.0f, 2, 2, 2, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.5f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 13: Wavy */
+    { "Wavy", 0.6f, 0.5f, 0.5f, 0.0f, 0.5f, 0, 0, 1.0f, 0.0f, 2, 2, 2, 0.0f, 0.0f, 20, 20000, 1, 0.2f, 0.4f, 0, 0.3f, 0.5f, 0.4f, 1, 0.0f },
+    /* 14: Pulsing */
+    { "Pulsing", 0.7f, 0.5f, 0.5f, 0.0f, 0.3f, 0, 0, 1.0f, 0.0f, 2, 2, 1, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.6f, 0, 0.0f, 0.5f, 1.0f, 0, 0.0f },
+    /* 15: Minimal */
+    { "Minimal", 0.8f, 0.3f, 0.3f, 0.0f, 0.5f, 0, 0, 0.5f, 0.0f, 0, 1, 0, 0.0f, 0.0f, 80, 5000, 1, 0.1f, 0.5f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 16: Lush */
+    { "Lush", 0.5f, 0.6f, 0.7f, 1.0f, 0.8f, 0, 7, 1.0f, 0.0f, 2, 2, 3, 0.0f, 2.0f, 20, 20000, 1, 0.3f, 0.3f, 0, 0.0f, 0.2f, 0.3f, 0, 0.1f },
+    /* 17: Crisp */
+    { "Crisp", 0.85f, 0.7f, 0.8f, 0.0f, 0.2f, 0, 0, 1.0f, 0.0f, 2, 2, 1, 3.0f, 0.0f, 200, 15000, 1, 0.1f, 0.5f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 18: Glitch */
+    { "Glitch", 0.9f, 0.4f, 0.5f, 0.0f, 0.05f, 0, 11, 1.0f, 0.2f, 2, 3, 1, 0.0f, -3.0f, 20, 20000, 1, 0.1f, 0.7f, 3, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 19: Warm */
+    { "Warm", 0.6f, 0.4f, 0.4f, 0.8f, 0.6f, 0, 0, 1.0f, 0.0f, 2, 2, 2, -3.0f, 0.0f, 20, 10000, 1, 0.25f, 0.4f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 20: Bright */
+    { "Bright", 0.7f, 0.7f, 1.0f, 0.0f, 0.3f, 0, 0, 1.0f, 0.0f, 2, 2, 1, 3.0f, 0.0f, 100, 20000, 1, 0.1f, 0.5f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 21: Deep */
+    { "Deep", 0.5f, 0.2f, 0.3f, 0.5f, 0.85f, 0, 9, 0.8f, 0.0f, 1, 1, 2, -6.0f, 0.0f, 20, 2000, 1, 0.3f, 0.4f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 22: Airy */
+    { "Airy", 0.3f, 0.8f, 0.8f, 0.9f, 0.8f, 9, 0, 1.0f, 0.0f, 2, 2, 3, 6.0f, 0.0f, 500, 20000, 1, 0.05f, 0.3f, 0, 0.0f, 0.1f, 0.2f, 1, 0.0f },
+    /* 23: Metallic */
+    { "Metallic", 0.85f, 0.6f, 0.8f, 0.0f, 0.25f, 0, 0, 1.0f, 0.0f, 2, 2, 1, 2.0f, 0.0f, 40, 20000, 1, 0.1f, 0.6f, 0, 0.0f, 0.0f, 0.0f, 0, 0.2f },
+    /* 24: Modulating */
+    { "Modulating", 0.6f, 0.5f, 0.5f, 0.0f, 0.5f, 0, 0, 1.0f, 0.0f, 2, 2, 2, 0.0f, 0.0f, 20, 20000, 1, 0.2f, 0.5f, 0, 0.0f, 0.4f, 0.6f, 0, 0.0f },
+    /* 25: Sparse */
+    { "Sparse", 0.95f, 0.3f, 0.4f, 0.0f, 0.5f, 0, 0, 0.4f, 0.0f, 0, 1, 1, 0.0f, 0.0f, 40, 15000, 1, 0.15f, 0.5f, 0, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 26: Liquid */
+    { "Liquid", 0.5f, 0.5f, 0.6f, 0.7f, 0.75f, 0, 7, 0.9f, 0.0f, 1, 2, 2, -2.0f, 1.0f, 20, 12000, 1, 0.25f, 0.4f, 0, 0.0f, 0.15f, 0.4f, 0, 0.05f },
+    /* 27: Rhythmic */
+    { "Rhythmic", 0.8f, 0.5f, 0.5f, 0.0f, 0.15f, 0, 11, 1.0f, 0.0f, 2, 3, 1, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.7f, 1, 0.0f, 0.0f, 0.0f, 0, 0.0f },
+    /* 28: Spacious */
+    { "Spacious", 0.4f, 0.5f, 0.5f, 1.0f, 0.9f, 0, 0, 1.0f, 0.0f, 2, 2, 3, 0.0f, 3.0f, 20, 20000, 1, 0.2f, 0.3f, 0, 0.0f, 0.2f, 0.3f, 1, 0.15f },
+    /* 29: Chaos */
+    { "Chaos", 0.9f, 0.5f, 0.6f, 0.0f, 0.2f, 0, 11, 1.0f, 0.5f, 2, 3, 2, 0.0f, 0.0f, 20, 20000, 1, 0.1f, 0.8f, 3, 0.8f, 0.0f, 0.0f, 0, 0.3f },
+};
+
 /* ── Knob mapping ────────────────────────────────────────────────────────────── */
 
 typedef struct {
@@ -168,6 +265,34 @@ static const knob_def_t KNOB_MAP_P2[8] = {
     { "post_gain",    "Post Gain", -12, 12, 0.5f, 0 },
     { "hpf",          "HPF",        20, 2000, 20.0f, 0 },
     { "lpf",          "LPF",       500, 20000, 200.0f, 0 },
+};
+
+/* Page 3 knob mapping (Motion page)
+ * 1=Arp Rate, 2=Arp Pattern, 3=Arp Sync, 4=Drift,
+ * 5=Motion Rate, 6=Motion Depth, 7=Motion Shape, 8=Scoop */
+static const knob_def_t KNOB_MAP_P3[8] = {
+    { "arp_rate",     "Arp Rate",   0, 1, 0.01f, 0 },
+    { "arp_pattern",  "Arp Ptrn",   0, 4, 1.0f,  1 },
+    { "arp_sync",     "Arp Sync",   0, 1, 1.0f,  1 },
+    { "drift",        "Drift",      0, 1, 0.01f, 0 },
+    { "motion_rate",  "Mot Rate",   0, 1, 0.01f, 0 },
+    { "motion_depth", "Mot Depth",  0, 1, 0.01f, 0 },
+    { "motion_shape", "Mot Shape",  0, 3, 1.0f,  1 },
+    { "scoop",        "Scoop",      0, 1, 0.01f, 0 },
+};
+
+/* Page 4 knob mapping (Patch page)
+ * 1=Preset, 2=Rnd Preset, 3=Rnd Spectra, 4=Rnd Motion,
+ * 5=Rnd Pan, 6=Stereo Width */
+static const knob_def_t KNOB_MAP_P4[8] = {
+    { "preset",       "Preset",     0, 29, 1.0f, 1 },
+    { "rnd_preset",   "Rnd Prs",    0, 1, 1.0f, 0 },
+    { "rnd_spectra",  "Rnd Spc",    0, 1, 1.0f, 0 },
+    { "rnd_motion",   "Rnd Mot",    0, 1, 1.0f, 0 },
+    { "rnd_pan",      "Rnd Pan",    0, 1, 1.0f, 0 },
+    { "stereo_width", "Stereo",     0, 1, 0.01f, 0 },
+    { "", "", 0, 1, 0.01f, 0 },
+    { "", "", 0, 1, 0.01f, 0 },
 };
 
 /* ── FFT (real-only, radix-2 DIT) ────────────────────────────────────────────
@@ -320,6 +445,7 @@ typedef struct {
     /* Global analysis */
     float spectral_flatness;   /* 0-1 */
     float input_rms;           /* smoothed RMS of input */
+    float excitation_gain_smooth; /* smoothed excitation multiplier (prevents volume jumps) */
 
     /* Voice allocator */
     voice_t voices[MAX_VOICES];
@@ -338,6 +464,42 @@ typedef struct {
 
     /* PRNG state (xorshift32 for chord drift) */
     uint32_t rng_state;
+
+    /* ── Motion page state ── */
+    float arp_rate;           /* 0–1 → mapped to Hz or clock div */
+    int   arp_pattern;        /* 0=Off, 1=Up, 2=Down, 3=Random, 4=Chord */
+    int   arp_sync;           /* 0=Free, 1=Sync */
+    float arp_phase;          /* 0–1, wraps */
+    int   arp_current_step;   /* which resonator is currently active */
+    uint32_t arp_rng;         /* xorshift state for Random mode */
+    float arp_gate[MAX_RESONATORS]; /* per-resonator gate mask */
+
+    float drift;              /* 0–1 amount */
+    float drift_noise[MAX_RESONATORS]; /* per-resonator smoothed noise */
+    uint32_t drift_rng;       /* independent RNG */
+    float drift_ratio[MAX_RESONATORS]; /* per-resonator pitch ratio */
+
+    float motion_rate;        /* 0–1 → Hz */
+    float motion_depth;       /* 0–1 */
+    int   motion_shape;       /* 0=Sine, 1=Tri, 2=Square, 3=S&H */
+    float motion_phase;       /* 0–1, wraps */
+    float motion_sh_value;    /* held value for S&H */
+    uint32_t motion_sh_rng;   /* RNG for S&H */
+
+    float scoop;              /* 0–1 → notch depth */
+    float scoop_z1[MAX_RESONATORS]; /* per-resonator scoop notch state */
+    float scoop_z2[MAX_RESONATORS];
+
+    /* ── Patch page state ── */
+    int current_preset;       /* 0-29 */
+    float stereo_width;       /* 0-1 (0=mono, 1=full stereo) */
+    float pan_spread[MAX_VOICES]; /* per-voice pan override (0-1) */
+
+    /* Rnd button display counters (show 1 briefly, then decay to 0) */
+    int rnd_preset_counter;    /* countdown: display 1 while > 0, else 0 */
+    int rnd_spectra_counter;
+    int rnd_motion_counter;
+    int rnd_pan_counter;
 
 } plugin_instance_t;
 
@@ -396,6 +558,44 @@ static int *get_int_param_ptr_p2(plugin_instance_t *inst, int idx) {
     switch (idx) {
         case 1: return &inst->resonators_idx;
         case 2: return &inst->octave_range_idx;
+        default: return NULL;
+    }
+}
+
+/* Page 3 (Motion) float param pointers */
+static float *get_float_param_ptr_p3(plugin_instance_t *inst, int idx) {
+    switch (idx) {
+        case 0: return &inst->arp_rate;
+        case 3: return &inst->drift;
+        case 4: return &inst->motion_rate;
+        case 5: return &inst->motion_depth;
+        case 7: return &inst->scoop;
+        default: return NULL;
+    }
+}
+
+/* Page 3 (Motion) int param pointers */
+static int *get_int_param_ptr_p3(plugin_instance_t *inst, int idx) {
+    switch (idx) {
+        case 1: return &inst->arp_pattern;
+        case 2: return &inst->arp_sync;
+        case 6: return &inst->motion_shape;
+        default: return NULL;
+    }
+}
+
+/* Page 4 (Patch) float param pointers */
+static float *get_float_param_ptr_p4(plugin_instance_t *inst, int idx) {
+    switch (idx) {
+        case 5: return &inst->stereo_width;
+        default: return NULL;
+    }
+}
+
+/* Page 4 (Patch) int param pointers */
+static int *get_int_param_ptr_p4(plugin_instance_t *inst, int idx) {
+    switch (idx) {
+        case 0: return &inst->current_preset;
         default: return NULL;
     }
 }
@@ -525,6 +725,254 @@ static inline float tape_soft_clip(float x) {
     return x - x * x * x / 3.0f;
 }
 
+/* ── Motion page engines ─────────────────────────────────────────────────────── */
+
+/* Arp rate mapping: 0→0.1 Hz, 1→20 Hz exponential */
+static inline float arp_rate_to_hz(float knob) {
+    return 0.1f * powf(200.0f, knob);
+}
+
+/* Arp: compute per-resonator gate mask */
+static void arp_tick(plugin_instance_t *inst, int num_resonators, int frames) {
+    if (inst->arp_pattern == 0) {
+        /* Off — all resonators active */
+        for (int i = 0; i < num_resonators; i++)
+            inst->arp_gate[i] = 1.0f;
+        return;
+    }
+
+    float hz = arp_rate_to_hz(inst->arp_rate);
+    float phase_inc = hz * (float)frames / (float)SAMPLE_RATE;
+    inst->arp_phase += phase_inc;
+
+    int stepped = 0;
+    while (inst->arp_phase >= 1.0f) {
+        inst->arp_phase -= 1.0f;
+        stepped = 1;
+    }
+
+    if (stepped) {
+        switch (inst->arp_pattern) {
+        case 1: /* Up */
+            inst->arp_current_step = (inst->arp_current_step + 1) % num_resonators;
+            break;
+        case 2: /* Down */
+            inst->arp_current_step = (inst->arp_current_step - 1 + num_resonators) % num_resonators;
+            break;
+        case 3: /* Random */
+            inst->arp_rng ^= inst->arp_rng << 13;
+            inst->arp_rng ^= inst->arp_rng >> 17;
+            inst->arp_rng ^= inst->arp_rng << 5;
+            inst->arp_current_step = (int)(inst->arp_rng % (uint32_t)num_resonators);
+            break;
+        case 4: /* Chord — all pulse together */
+            break;
+        }
+    }
+
+    /* Set gate mask */
+    for (int i = 0; i < num_resonators; i++) {
+        if (inst->arp_pattern == 4) {
+            /* Chord: all resonators follow a single envelope */
+            float env = (inst->arp_phase < 0.5f) ? 1.0f : 0.0f;
+            inst->arp_gate[i] = env;
+        } else {
+            /* Single-note arp: smooth gate with short fade */
+            inst->arp_gate[i] = (i == inst->arp_current_step) ? 1.0f : 0.02f;
+        }
+    }
+}
+
+/* Drift: perturb resonator center frequencies */
+static void drift_tick(plugin_instance_t *inst, int num_resonators) {
+    if (inst->drift < 0.001f) {
+        for (int i = 0; i < num_resonators; i++)
+            inst->drift_ratio[i] = 1.0f;
+        return;
+    }
+
+    float max_cents = 50.0f * inst->drift; /* 0–50 cents */
+    float smooth = 0.995f; /* ~4.5 Hz @ 44100/128 blocks/sec */
+
+    for (int i = 0; i < num_resonators; i++) {
+        /* White noise via xorshift */
+        inst->drift_rng ^= inst->drift_rng << 13;
+        inst->drift_rng ^= inst->drift_rng >> 17;
+        inst->drift_rng ^= inst->drift_rng << 5;
+        float noise = ((float)(inst->drift_rng & 0xFFFF) / 32768.0f) - 1.0f; /* -1..+1 */
+
+        /* Smooth random walk */
+        inst->drift_noise[i] = smooth * inst->drift_noise[i] + (1.0f - smooth) * noise;
+
+        /* Apply as pitch ratio: cents → ratio */
+        float cents = inst->drift_noise[i] * max_cents;
+        inst->drift_ratio[i] = powf(2.0f, cents / 1200.0f);
+    }
+}
+
+/* Motion LFO: per-sample, per-resonator amplitude modulation */
+static float motion_lfo_sample(plugin_instance_t *inst) {
+    float rate_hz = 0.1f * powf(200.0f, inst->motion_rate);
+    float phase_inc = rate_hz / (float)SAMPLE_RATE;
+
+    inst->motion_phase += phase_inc;
+    int wrapped = 0;
+    if (inst->motion_phase >= 1.0f) {
+        inst->motion_phase -= 1.0f;
+        wrapped = 1;
+    }
+
+    float p = inst->motion_phase;
+    float val;
+    switch (inst->motion_shape) {
+    case 0: /* Sine */
+        val = sinf(p * 2.0f * M_PI);
+        break;
+    case 1: /* Triangle */
+        val = (p < 0.5f) ? (4.0f * p - 1.0f) : (3.0f - 4.0f * p);
+        break;
+    case 2: /* Square */
+        val = (p < 0.5f) ? 1.0f : -1.0f;
+        break;
+    case 3: /* S&H (Sample & Hold) */
+        if (wrapped) {
+            inst->motion_sh_rng ^= inst->motion_sh_rng << 13;
+            inst->motion_sh_rng ^= inst->motion_sh_rng >> 17;
+            inst->motion_sh_rng ^= inst->motion_sh_rng << 5;
+            inst->motion_sh_value = ((float)(inst->motion_sh_rng & 0xFFFF) / 32768.0f) - 1.0f;
+        }
+        val = inst->motion_sh_value;
+        break;
+    default:
+        val = 0.0f;
+    }
+
+    /* Unipolar 0–1 for amplitude modulation */
+    return 1.0f - inst->motion_depth * (0.5f + 0.5f * val);
+}
+
+/* Scoop notch filter: per-resonator, per-sample */
+static inline float scoop_process(float in, float freq_hz, float scoop_amount,
+                                   float *z1, float *z2) {
+    if (scoop_amount < 0.001f) return in;
+
+    float w0 = 2.0f * M_PI * freq_hz / (float)SAMPLE_RATE;
+    float Q = 10.0f;
+    float alpha = sinf(w0) / (2.0f * Q);
+
+    /* Notch coefficients */
+    float b0 = 1.0f;
+    float b1 = -2.0f * cosf(w0);
+    float b2 = 1.0f;
+    float a0 = 1.0f + alpha;
+    float a1 = -2.0f * cosf(w0);
+    float a2 = 1.0f - alpha;
+
+    /* Normalize */
+    b0 /= a0; b1 /= a0; b2 /= a0;
+    a1 /= a0; a2 /= a0;
+
+    float out = b0 * in + *z1 + DENORMAL_GUARD;
+    *z1 = b1 * in - a1 * out + *z2;
+    *z2 = b2 * in - a2 * out;
+
+    /* Crossfade between dry and notched by scoop amount */
+    return in + scoop_amount * (out - in);
+}
+
+/* ── Randomization functions ────────────────────────────────────────────────── */
+
+static void apply_preset(plugin_instance_t *inst, int idx) {
+    if (idx < 0 || idx >= NUM_PRESETS) return;
+    const spectra_preset_t *p = &PRESETS[idx];
+
+    inst->onset = p->onset;
+    inst->frequency = p->frequency;
+    inst->brightness = p->brightness;
+    inst->timbre = p->timbre;
+    inst->decay = p->decay;
+    inst->root_note = p->root_note;
+    inst->scale = p->scale;
+    inst->mix = p->mix;
+    inst->chord_drift = p->chord_drift;
+    inst->resonators_idx = p->resonators_idx;
+    inst->polyphony_idx = p->polyphony_idx;
+    inst->octave_range_idx = p->octave_range_idx;
+    inst->pre_gain = p->pre_gain;
+    inst->post_gain = p->post_gain;
+    inst->hpf = p->hpf;
+    inst->lpf = p->lpf;
+    inst->limiter = p->limiter;
+    inst->compress = p->compress;
+    inst->arp_rate = p->arp_rate;
+    inst->arp_pattern = p->arp_pattern;
+    inst->arp_sync = p->arp_sync;
+    inst->drift = p->drift;
+    inst->motion_rate = p->motion_rate;
+    inst->motion_depth = p->motion_depth;
+    inst->motion_shape = p->motion_shape;
+    inst->scoop = p->scoop;
+    inst->current_preset = idx;
+}
+
+static void randomize_preset(plugin_instance_t *inst) {
+    inst->onset = rand_float(&inst->rng_state);
+    inst->frequency = rand_float(&inst->rng_state);
+    inst->brightness = rand_float(&inst->rng_state);
+    inst->timbre = rand_float(&inst->rng_state);
+    inst->decay = 0.05f + rand_float(&inst->rng_state) * 0.95f;
+    inst->root_note = (int)(rand_float(&inst->rng_state) * NUM_ROOT_NOTES);
+    inst->scale = (int)(rand_float(&inst->rng_state) * NUM_SCALES);
+    inst->mix = 0.5f + rand_float(&inst->rng_state) * 0.5f;
+    inst->chord_drift = rand_float(&inst->rng_state) * 0.5f;
+    inst->resonators_idx = (int)(rand_float(&inst->rng_state) * 3);
+    inst->polyphony_idx = (int)(rand_float(&inst->rng_state) * 3);
+    inst->octave_range_idx = (int)(rand_float(&inst->rng_state) * 4);
+    inst->pre_gain = -6.0f + rand_float(&inst->rng_state) * 12.0f;
+    inst->post_gain = -3.0f + rand_float(&inst->rng_state) * 6.0f;
+    inst->hpf = 20 + (int)(rand_float(&inst->rng_state) * 200);
+    inst->lpf = 5000 + (int)(rand_float(&inst->rng_state) * 15000);
+    inst->limiter = (rand_float(&inst->rng_state) > 0.3f) ? 1 : 0;
+    inst->compress = rand_float(&inst->rng_state) * 0.5f;
+    inst->arp_rate = rand_float(&inst->rng_state);
+    inst->arp_pattern = (int)(rand_float(&inst->rng_state) * 5);
+    inst->arp_sync = (rand_float(&inst->rng_state) > 0.7f) ? 1 : 0;
+    inst->drift = rand_float(&inst->rng_state) * 0.7f;
+    inst->motion_rate = rand_float(&inst->rng_state);
+    inst->motion_depth = rand_float(&inst->rng_state) * 0.8f;
+    inst->motion_shape = (int)(rand_float(&inst->rng_state) * NUM_MOTION_SHAPES);
+    inst->scoop = rand_float(&inst->rng_state) * 0.5f;
+    inst->current_preset = -1; /* no preset */
+}
+
+static void randomize_spectra_page(plugin_instance_t *inst) {
+    inst->onset = rand_float(&inst->rng_state);
+    inst->frequency = rand_float(&inst->rng_state);
+    inst->brightness = rand_float(&inst->rng_state);
+    inst->timbre = rand_float(&inst->rng_state);
+    inst->decay = 0.05f + rand_float(&inst->rng_state) * 0.95f;
+    inst->root_note = (int)(rand_float(&inst->rng_state) * NUM_ROOT_NOTES);
+    inst->scale = (int)(rand_float(&inst->rng_state) * NUM_SCALES);
+    inst->mix = 0.5f + rand_float(&inst->rng_state) * 0.5f;
+}
+
+static void randomize_motion_page(plugin_instance_t *inst) {
+    inst->arp_rate = rand_float(&inst->rng_state);
+    inst->arp_pattern = (int)(rand_float(&inst->rng_state) * 5);
+    inst->arp_sync = (rand_float(&inst->rng_state) > 0.7f) ? 1 : 0;
+    inst->drift = rand_float(&inst->rng_state) * 0.7f;
+    inst->motion_rate = rand_float(&inst->rng_state);
+    inst->motion_depth = rand_float(&inst->rng_state) * 0.8f;
+    inst->motion_shape = (int)(rand_float(&inst->rng_state) * NUM_MOTION_SHAPES);
+    inst->scoop = rand_float(&inst->rng_state) * 0.5f;
+}
+
+static void randomize_panning(plugin_instance_t *inst, int num_voices) {
+    for (int i = 0; i < num_voices; i++) {
+        inst->pan_spread[i] = rand_float(&inst->rng_state);
+    }
+}
+
 /* ── Lifecycle ───────────────────────────────────────────────────────────────── */
 
 static void *create_instance(const char *module_dir, const char *json_defaults) {
@@ -555,6 +1003,43 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     inst->limiter = 1;     /* On */
     inst->compress = 0.2f; /* 20% — same default as Dissolver */
 
+    /* Page 3 (Motion) defaults */
+    inst->arp_rate = 0.5f;
+    inst->arp_pattern = 0;  /* Off */
+    inst->arp_sync = 0;     /* Free */
+    inst->arp_phase = 0.0f;
+    inst->arp_current_step = 0;
+    inst->arp_rng = 0xCAFEBABE;  /* Different seed from main RNG */
+    inst->drift = 0.0f;
+    inst->drift_rng = 0xDEAFDEAF;
+    inst->motion_rate = 0.3f;
+    inst->motion_depth = 0.0f;
+    inst->motion_shape = 0;  /* Sine */
+    inst->motion_phase = 0.0f;
+    inst->motion_sh_value = 0.0f;
+    inst->motion_sh_rng = 0xFEEDBEEF;
+    inst->scoop = 0.0f;
+
+    /* Initialize per-resonator Motion state */
+    for (int i = 0; i < MAX_RESONATORS; i++) {
+        inst->arp_gate[i] = 1.0f;
+        inst->drift_noise[i] = 0.0f;
+        inst->drift_ratio[i] = 1.0f;
+        inst->scoop_z1[i] = 0.0f;
+        inst->scoop_z2[i] = 0.0f;
+    }
+
+    /* Patch page defaults */
+    inst->current_preset = 0;
+    inst->stereo_width = 1.0f;
+    for (int i = 0; i < MAX_VOICES; i++) {
+        inst->pan_spread[i] = (float)i / (float)(MAX_VOICES - 1);
+    }
+
+    /* Initialize excitation gain smoothing (prevents volume jumps on input transients) */
+    inst->input_rms = 0.0f;
+    inst->excitation_gain_smooth = 1.0f;
+
     /* Initialize Hann window for FFT */
     for (int i = 0; i < FFT_SIZE; i++) {
         inst->fft_window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * (float)i / (float)(FFT_SIZE - 1)));
@@ -579,8 +1064,10 @@ static void set_param(void *instance, const char *key, const char *val) {
 
     /* ── Page tracking (Schwung sends _level when user navigates pages) ── */
     if (strcmp(key, "_level") == 0) {
-        if (strcmp(val, "Control") == 0) inst->current_page = 1;
-        else inst->current_page = 0; /* "Spectra" or root */
+        if (strcmp(val, "Motion") == 0) inst->current_page = 2;
+        else if (strcmp(val, "Control") == 0) inst->current_page = 1;
+        else if (strcmp(val, "Patch") == 0) inst->current_page = 3;
+        else inst->current_page = 0; /* "Spectra", "Main", or root */
         return;
     }
 
@@ -595,7 +1082,22 @@ static void set_param(void *instance, const char *key, const char *val) {
         float *fp = NULL;
         int *ip = NULL;
 
-        if (inst->current_page == 1) {
+        if (inst->current_page == 3) {
+            /* Patch page */
+            k = &KNOB_MAP_P4[idx];
+            /* Rnd buttons: trigger on knob turn and set display counter */
+            if (idx == 1) { randomize_preset(inst); inst->rnd_preset_counter = 3; return; }
+            if (idx == 2) { randomize_spectra_page(inst); inst->rnd_spectra_counter = 3; return; }
+            if (idx == 3) { randomize_motion_page(inst); inst->rnd_motion_counter = 3; return; }
+            if (idx == 4) { randomize_panning(inst, MAX_VOICES); inst->rnd_pan_counter = 3; return; }
+            if (k->is_enum) ip = get_int_param_ptr_p4(inst, idx);
+            else fp = get_float_param_ptr_p4(inst, idx);
+        } else if (inst->current_page == 2) {
+            /* Motion page */
+            k = &KNOB_MAP_P3[idx];
+            if (k->is_enum) ip = get_int_param_ptr_p3(inst, idx);
+            else fp = get_float_param_ptr_p3(inst, idx);
+        } else if (inst->current_page == 1) {
             /* Control page */
             k = &KNOB_MAP_P2[idx];
             /* HPF/LPF are int with clamping (not wrapping) */
@@ -673,17 +1175,76 @@ static void set_param(void *instance, const char *key, const char *val) {
         else if (strcmp(val, "On") == 0) inst->limiter = 1;
         else inst->limiter = clampi(atoi(val), 0, 1);
     }
+    /* ── Page 3 (Motion) params ── */
+    else if (strcmp(key, "arp_rate") == 0)    inst->arp_rate = clampf(atof(val), 0, 1);
+    else if (strcmp(key, "arp_pattern") == 0) {
+        int found = 0;
+        for (int i = 0; i < NUM_ARP_PATTERNS; i++) {
+            if (strcmp(val, ARP_PATTERN_NAMES[i]) == 0) { inst->arp_pattern = i; found = 1; break; }
+        }
+        if (!found) inst->arp_pattern = clampi(atoi(val), 0, NUM_ARP_PATTERNS - 1);
+    }
+    else if (strcmp(key, "arp_sync") == 0) {
+        int found = 0;
+        for (int i = 0; i < NUM_ARP_SYNC; i++) {
+            if (strcmp(val, ARP_SYNC_NAMES[i]) == 0) { inst->arp_sync = i; found = 1; break; }
+        }
+        if (!found) inst->arp_sync = clampi(atoi(val), 0, NUM_ARP_SYNC - 1);
+    }
+    else if (strcmp(key, "drift") == 0)       inst->drift = clampf(atof(val), 0, 1);
+    else if (strcmp(key, "motion_rate") == 0) inst->motion_rate = clampf(atof(val), 0, 1);
+    else if (strcmp(key, "motion_depth") == 0) inst->motion_depth = clampf(atof(val), 0, 1);
+    else if (strcmp(key, "motion_shape") == 0) {
+        int found = 0;
+        for (int i = 0; i < NUM_MOTION_SHAPES; i++) {
+            if (strcmp(val, MOTION_SHAPE_NAMES[i]) == 0) { inst->motion_shape = i; found = 1; break; }
+        }
+        if (!found) inst->motion_shape = clampi(atoi(val), 0, NUM_MOTION_SHAPES - 1);
+    }
+    else if (strcmp(key, "scoop") == 0)       inst->scoop = clampf(atof(val), 0, 1);
+    /* ── Patch page params ── */
+    else if (strcmp(key, "preset") == 0) {
+        int found = 0;
+        for (int i = 0; i < NUM_PRESETS; i++) {
+            if (strcmp(val, PRESETS[i].name) == 0) { apply_preset(inst, i); found = 1; break; }
+        }
+        if (!found) {
+            int idx = clampi(atoi(val), 0, NUM_PRESETS - 1);
+            apply_preset(inst, idx);
+        }
+    }
+    else if (strcmp(key, "rnd_preset") == 0 && atof(val) > 0.5f) {
+        randomize_preset(inst);
+    }
+    else if (strcmp(key, "rnd_spectra") == 0 && atof(val) > 0.5f) {
+        randomize_spectra_page(inst);
+    }
+    else if (strcmp(key, "rnd_motion") == 0 && atof(val) > 0.5f) {
+        randomize_motion_page(inst);
+    }
+    else if (strcmp(key, "rnd_pan") == 0 && atof(val) > 0.5f) {
+        randomize_panning(inst, MAX_VOICES);
+    }
+    else if (strcmp(key, "stereo_width") == 0) {
+        inst->stereo_width = clampf(atof(val), 0, 1);
+    }
     /* ── State restore ── */
     else if (strcmp(key, "state") == 0) {
         sscanf(val,
             "onset=%f;frequency=%f;brightness=%f;timbre=%f;decay=%f;"
             "root_note=%d;scale=%d;mix=%f;"
             "chord_drift=%f;resonators=%d;polyphony=%d;octave_range=%d;"
-            "pre_gain=%f;post_gain=%f;hpf=%d;lpf=%d;limiter=%d",
+            "pre_gain=%f;post_gain=%f;hpf=%d;lpf=%d;limiter=%d;compress=%f;"
+            "arp_rate=%f;arp_pattern=%d;arp_sync=%d;drift=%f;"
+            "motion_rate=%f;motion_depth=%f;motion_shape=%d;scoop=%f;"
+            "current_preset=%d;stereo_width=%f",
             &inst->onset, &inst->frequency, &inst->brightness, &inst->timbre, &inst->decay,
             &inst->root_note, &inst->scale, &inst->mix,
             &inst->chord_drift, &inst->resonators_idx, &inst->polyphony_idx, &inst->octave_range_idx,
-            &inst->pre_gain, &inst->post_gain, &inst->hpf, &inst->lpf, &inst->limiter);
+            &inst->pre_gain, &inst->post_gain, &inst->hpf, &inst->lpf, &inst->limiter, &inst->compress,
+            &inst->arp_rate, &inst->arp_pattern, &inst->arp_sync, &inst->drift,
+            &inst->motion_rate, &inst->motion_depth, &inst->motion_shape, &inst->scoop,
+            &inst->current_preset, &inst->stereo_width);
     }
 }
 
@@ -715,7 +1276,21 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
             "{\"key\":\"compress\",\"name\":\"Compress\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01},"
             "{\"key\":\"hpf\",\"name\":\"HPF\",\"type\":\"int\",\"min\":20,\"max\":2000,\"step\":1},"
             "{\"key\":\"lpf\",\"name\":\"LPF\",\"type\":\"int\",\"min\":500,\"max\":20000,\"step\":1},"
-            "{\"key\":\"limiter\",\"name\":\"Limiter\",\"type\":\"enum\",\"options\":[\"Off\",\"On\"]}"
+            "{\"key\":\"limiter\",\"name\":\"Limiter\",\"type\":\"enum\",\"options\":[\"Off\",\"On\"]},"
+            "{\"key\":\"arp_rate\",\"name\":\"Arp Rate\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01},"
+            "{\"key\":\"arp_pattern\",\"name\":\"Arp Ptrn\",\"type\":\"enum\",\"options\":[\"Off\",\"Up\",\"Down\",\"Random\",\"Chord\"]},"
+            "{\"key\":\"arp_sync\",\"name\":\"Arp Sync\",\"type\":\"enum\",\"options\":[\"Free\",\"Sync\"]},"
+            "{\"key\":\"drift\",\"name\":\"Drift\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01},"
+            "{\"key\":\"motion_rate\",\"name\":\"Mot Rate\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01},"
+            "{\"key\":\"motion_depth\",\"name\":\"Mot Depth\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01},"
+            "{\"key\":\"motion_shape\",\"name\":\"Mot Shape\",\"type\":\"enum\",\"options\":[\"Sine\",\"Triangle\",\"Square\",\"S&H\"]},"
+            "{\"key\":\"scoop\",\"name\":\"Scoop\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01},"
+            "{\"key\":\"preset\",\"name\":\"Preset\",\"type\":\"enum\",\"options\":[\"Bell\",\"Pad\",\"Arp Up\",\"Arp Rnd\",\"Drifter\",\"Shimmer\",\"Drone Bass\",\"Tremolo\",\"Bells\",\"Scooped\",\"Evolving\",\"Stutter\",\"Resonant\",\"Wavy\",\"Pulsing\",\"Minimal\",\"Lush\",\"Crisp\",\"Glitch\",\"Warm\",\"Bright\",\"Deep\",\"Airy\",\"Metallic\",\"Modulating\",\"Sparse\",\"Liquid\",\"Rhythmic\",\"Spacious\",\"Chaos\"]},"
+            "{\"key\":\"rnd_preset\",\"name\":\"Rnd Preset\",\"type\":\"int\",\"min\":0,\"max\":1,\"step\":1},"
+            "{\"key\":\"rnd_spectra\",\"name\":\"Rnd Spectra\",\"type\":\"int\",\"min\":0,\"max\":1,\"step\":1},"
+            "{\"key\":\"rnd_motion\",\"name\":\"Rnd Motion\",\"type\":\"int\",\"min\":0,\"max\":1,\"step\":1},"
+            "{\"key\":\"rnd_pan\",\"name\":\"Rnd Pan\",\"type\":\"int\",\"min\":0,\"max\":1,\"step\":1},"
+            "{\"key\":\"stereo_width\",\"name\":\"Stereo Width\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01}"
             "]");
     }
 
@@ -747,11 +1322,39 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
     if (strcmp(key, "limiter") == 0)
         return snprintf(buf, buf_len, "%s", LIMITER_NAMES[clampi(inst->limiter, 0, 1)]);
 
+    /* Page 3 (Motion) */
+    if (strcmp(key, "arp_rate") == 0)   return snprintf(buf, buf_len, "%.4f", inst->arp_rate);
+    if (strcmp(key, "arp_pattern") == 0)
+        return snprintf(buf, buf_len, "%s", ARP_PATTERN_NAMES[clampi(inst->arp_pattern, 0, NUM_ARP_PATTERNS - 1)]);
+    if (strcmp(key, "arp_sync") == 0)
+        return snprintf(buf, buf_len, "%s", ARP_SYNC_NAMES[clampi(inst->arp_sync, 0, NUM_ARP_SYNC - 1)]);
+    if (strcmp(key, "drift") == 0)      return snprintf(buf, buf_len, "%.4f", inst->drift);
+    if (strcmp(key, "motion_rate") == 0) return snprintf(buf, buf_len, "%.4f", inst->motion_rate);
+    if (strcmp(key, "motion_depth") == 0) return snprintf(buf, buf_len, "%.4f", inst->motion_depth);
+    if (strcmp(key, "motion_shape") == 0)
+        return snprintf(buf, buf_len, "%s", MOTION_SHAPE_NAMES[clampi(inst->motion_shape, 0, NUM_MOTION_SHAPES - 1)]);
+    if (strcmp(key, "scoop") == 0)      return snprintf(buf, buf_len, "%.4f", inst->scoop);
+
+    /* Page 4 (Patch) */
+    if (strcmp(key, "preset") == 0) {
+        int idx = clampi(inst->current_preset, 0, NUM_PRESETS - 1);
+        return snprintf(buf, buf_len, "%s", PRESETS[idx].name);
+    }
+    if (strcmp(key, "rnd_preset") == 0)   return snprintf(buf, buf_len, "0");
+    if (strcmp(key, "rnd_spectra") == 0)  return snprintf(buf, buf_len, "0");
+    if (strcmp(key, "rnd_motion") == 0)   return snprintf(buf, buf_len, "0");
+    if (strcmp(key, "rnd_pan") == 0)      return snprintf(buf, buf_len, "0");
+    if (strcmp(key, "stereo_width") == 0) return snprintf(buf, buf_len, "%.0f%%", inst->stereo_width * 100.0f);
+
     /* ── knob_N_name (page-aware) ── */
     if (strncmp(key, "knob_", 5) == 0 && strstr(key, "_name")) {
         int idx = atoi(key + 5) - 1;
         if (idx >= 0 && idx < 8) {
-            const knob_def_t *k = (inst->current_page == 1) ? &KNOB_MAP_P2[idx] : &KNOB_MAP[idx];
+            const knob_def_t *k;
+            if (inst->current_page == 3) k = &KNOB_MAP_P4[idx];
+            else if (inst->current_page == 2) k = &KNOB_MAP_P3[idx];
+            else if (inst->current_page == 1) k = &KNOB_MAP_P2[idx];
+            else k = &KNOB_MAP[idx];
             if (k->label) return snprintf(buf, buf_len, "%s", k->label);
         }
         return 0;
@@ -762,7 +1365,32 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
         int idx = atoi(key + 5) - 1;
         if (idx >= 0 && idx < 8) {
             const knob_def_t *k;
-            if (inst->current_page == 1) {
+            if (inst->current_page == 3) {
+                /* Patch page */
+                k = &KNOB_MAP_P4[idx];
+                if (k->is_enum) {
+                    return get_param(instance, k->key, buf, buf_len);
+                } else if (idx >= 1 && idx <= 4) {
+                    /* Rnd buttons: always display 0 */
+                    return snprintf(buf, buf_len, "0");
+                } else {
+                    float *p = get_float_param_ptr_p4(inst, idx);
+                    if (p) {
+                        if (idx == 5) return snprintf(buf, buf_len, "%.0f%%", *p * 100);
+                        return snprintf(buf, buf_len, "%.0f", *p);
+                    }
+                }
+            } else if (inst->current_page == 2) {
+                /* Motion page */
+                k = &KNOB_MAP_P3[idx];
+                if (k->is_enum) {
+                    return get_param(instance, k->key, buf, buf_len);
+                } else {
+                    float *p = get_float_param_ptr_p3(inst, idx);
+                    if (p) return snprintf(buf, buf_len, "%d%%", (int)(*p * 100));
+                }
+            } else if (inst->current_page == 1) {
+                /* Control page */
                 k = &KNOB_MAP_P2[idx];
                 /* HPF/LPF are int — display directly */
                 if (idx == 6) return snprintf(buf, buf_len, "%d Hz", inst->hpf);
@@ -777,6 +1405,7 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
                     }
                 }
             } else {
+                /* Main page */
                 k = &KNOB_MAP[idx];
                 if (k->is_enum) {
                     return get_param(instance, k->key, buf, buf_len);
@@ -795,11 +1424,17 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
             "onset=%.6f;frequency=%.6f;brightness=%.6f;timbre=%.6f;decay=%.6f;"
             "root_note=%d;scale=%d;mix=%.6f;"
             "chord_drift=%.6f;resonators=%d;polyphony=%d;octave_range=%d;"
-            "pre_gain=%.6f;post_gain=%.6f;hpf=%d;lpf=%d;limiter=%d;compress=%.6f",
+            "pre_gain=%.6f;post_gain=%.6f;hpf=%d;lpf=%d;limiter=%d;compress=%.6f;"
+            "arp_rate=%.6f;arp_pattern=%d;arp_sync=%d;drift=%.6f;"
+            "motion_rate=%.6f;motion_depth=%.6f;motion_shape=%d;scoop=%.6f;"
+            "current_preset=%d;stereo_width=%.6f",
             inst->onset, inst->frequency, inst->brightness, inst->timbre, inst->decay,
             inst->root_note, inst->scale, inst->mix,
             inst->chord_drift, inst->resonators_idx, inst->polyphony_idx, inst->octave_range_idx,
-            inst->pre_gain, inst->post_gain, inst->hpf, inst->lpf, inst->limiter, inst->compress);
+            inst->pre_gain, inst->post_gain, inst->hpf, inst->lpf, inst->limiter, inst->compress,
+            inst->arp_rate, inst->arp_pattern, inst->arp_sync, inst->drift,
+            inst->motion_rate, inst->motion_depth, inst->motion_shape, inst->scoop,
+            inst->current_preset, inst->stereo_width);
     }
 
     return -1; /* unknown key */
@@ -871,6 +1506,10 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
     for (int i = 0; i < frames; i++) rms_sum += mono[i] * mono[i];
     float block_rms = sqrtf(rms_sum / (float)frames);
     inst->input_rms = inst->input_rms * 0.9f + block_rms * 0.1f;
+
+    /* ── Smooth excitation gain (prevents volume jumps on input transients) ── */
+    float target_excitation = 1.0f + inst->input_rms * 2.0f;
+    inst->excitation_gain_smooth += 0.01f * (target_excitation - inst->excitation_gain_smooth);
 
     /* ── Multiband analysis (runs when FFT buffer is full) ──────────────── */
     /* Clear per-frame band onset flags */
@@ -1022,6 +1661,11 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
          * svf_update_coeff just updates fc/fb, filter state (lp/bp) continues. */
     }
 
+    /* ── Motion page engines ──────────────────────────────────────────────── */
+    /* Arp and Drift work per-block and per-resonator respectively. */
+    arp_tick(inst, res_count, frames);
+    drift_tick(inst, res_count);
+
     /* ── Process audio through resonator bank ───────────────────────────── */
     float wet_l_buf[BLOCK_SIZE];
     float wet_r_buf[BLOCK_SIZE];
@@ -1032,7 +1676,13 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
         voice_t *v = &inst->voices[vi];
         if (!v->active) continue;
 
-        float pan = 0.5f + (float)(vi - num_voices / 2) * 0.15f;
+        /* Full stereo spread: each voice pans across the field */
+        /* Pan with stereo width control (0=mono at center, 1=full stereo spread) */
+        float center_pan = 0.5f + (float)(vi - num_voices / 2) * 0.35f;
+        center_pan = clampf(center_pan, 0.0f, 1.0f);
+        float pan = 0.5f + (center_pan - 0.5f) * inst->stereo_width;
+        /* Apply per-voice pan spread override */
+        pan = 0.5f + (inst->pan_spread[vi] - 0.5f) * inst->stereo_width;
         pan = clampf(pan, 0.0f, 1.0f);
         float pan_l = 1.0f - pan;
         float pan_r = pan;
@@ -1040,15 +1690,32 @@ static void process_block(void *instance, int16_t *audio_buf, int frames) {
          * Scale by num_resonators and apply brightness gain for tonal control. */
         float res_gain = (v->num_resonators > 0) ? 3.0f / sqrtf((float)v->num_resonators) : 0.0f;
         res_gain *= brightness_gain;
-        float excitation_gain = 1.0f + inst->input_rms * 2.0f;
 
         for (int i = 0; i < frames; i++) {
-            float input_sample = mono[i] * excitation_gain;
+            float input_sample = mono[i] * inst->excitation_gain_smooth;
             float resonator_sum = 0.0f;
+
+            /* Compute motion LFO for this sample (per-sample) */
+            float motion_gain = motion_lfo_sample(inst);
 
             for (int r = 0; r < v->num_resonators; r++) {
                 if (v->resonators[r].fc > 0.0f) {
-                    resonator_sum += svf_process_bp(&v->resonators[r], input_sample);
+                    /* Apply drift-perturbed frequency to resonator */
+                    float freq_with_drift = v->resonators[r].freq * inst->drift_ratio[r];
+                    v->resonators[r].freq = freq_with_drift;
+                    svf_update_coeff(&v->resonators[r]);
+
+                    /* Process through SVF */
+                    float res_out = svf_process_bp(&v->resonators[r], input_sample);
+
+                    /* Apply scoop notch filter */
+                    res_out = scoop_process(res_out, v->resonators[r].freq, inst->scoop,
+                                           &inst->scoop_z1[r], &inst->scoop_z2[r]);
+
+                    /* Apply arp gate and motion LFO */
+                    res_out *= inst->arp_gate[r] * motion_gain;
+
+                    resonator_sum += res_out;
                 }
             }
 

@@ -2,7 +2,7 @@
     "id": "spectra",
     "name": "Spectra",
     "abbrev": "SPCTRA",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "Multiband spectral resonator with pitch tracking and scale quantization",
     "author": "fillioning",
     "dsp": "spectra.so",
@@ -19,7 +19,9 @@
                     "knobs": ["onset", "frequency", "brightness", "timbre", "decay", "root_note", "scale", "mix"],
                     "params": [
                         { "level": "Main", "label": "Spectra" },
-                        { "level": "Control", "label": "Control" }
+                        { "level": "Control", "label": "Control" },
+                        { "level": "Motion", "label": "Motion" },
+                        { "level": "Patch", "label": "Patch" }
                     ]
                 },
                 "Main": {
@@ -51,6 +53,32 @@
                         { "key": "limiter",      "label": "Limiter",     "type": "enum",  "options": ["Off","On"], "default": 1 },
                         { "key": "polyphony",    "label": "Polyphony",   "type": "enum",  "options": ["1","2","4"], "default": 2 }
                     ]
+                },
+                "Motion": {
+                    "label": "Motion",
+                    "knobs": ["arp_rate", "arp_pattern", "arp_sync", "drift", "motion_rate", "motion_depth", "motion_shape", "scoop"],
+                    "params": [
+                        { "key": "arp_rate",      "label": "Arp Rate",    "type": "float", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
+                        { "key": "arp_pattern",   "label": "Arp Ptrn",    "type": "enum",  "options": ["Off", "Up", "Down", "Random", "Chord"], "default": 0 },
+                        { "key": "arp_sync",      "label": "Arp Sync",    "type": "enum",  "options": ["Free", "Sync"], "default": 0 },
+                        { "key": "drift",         "label": "Drift",       "type": "float", "min": 0, "max": 1, "default": 0.0, "step": 0.01 },
+                        { "key": "motion_rate",   "label": "Mot Rate",    "type": "float", "min": 0, "max": 1, "default": 0.3, "step": 0.01 },
+                        { "key": "motion_depth",  "label": "Mot Depth",   "type": "float", "min": 0, "max": 1, "default": 0.0, "step": 0.01 },
+                        { "key": "motion_shape",  "label": "Mot Shape",   "type": "enum",  "options": ["Sine", "Triangle", "Square", "S&H"], "default": 0 },
+                        { "key": "scoop",         "label": "Scoop",       "type": "float", "min": 0, "max": 1, "default": 0.0, "step": 0.01 }
+                    ]
+                },
+                "Patch": {
+                    "label": "Patch",
+                    "knobs": ["preset", "rnd_preset", "rnd_spectra", "rnd_motion", "rnd_pan", "stereo_width"],
+                    "params": [
+                        { "key": "preset",       "label": "Preset",       "type": "enum", "options": ["Bell", "Pad", "Arp Up", "Arp Rnd", "Drifter", "Shimmer", "Drone Bass", "Tremolo", "Bells", "Scooped", "Evolving", "Stutter", "Resonant", "Wavy", "Pulsing", "Minimal", "Lush", "Crisp", "Glitch", "Warm", "Bright", "Deep", "Airy", "Metallic", "Modulating", "Sparse", "Liquid", "Rhythmic", "Spacious", "Chaos"], "default": 0 },
+                        { "key": "rnd_preset",   "label": "Rnd Preset",   "type": "int", "min": 0, "max": 1, "default": 0, "step": 1 },
+                        { "key": "rnd_spectra",  "label": "Rnd Spectra",  "type": "int", "min": 0, "max": 1, "default": 0, "step": 1 },
+                        { "key": "rnd_motion",   "label": "Rnd Motion",   "type": "int", "min": 0, "max": 1, "default": 0, "step": 1 },
+                        { "key": "rnd_pan",      "label": "Rnd Pan",      "type": "int", "min": 0, "max": 1, "default": 0, "step": 1 },
+                        { "key": "stereo_width", "label": "Stereo Width", "type": "float", "min": 0, "max": 1, "default": 1.0, "step": 0.01 }
+                    ]
                 }
             }
         },
@@ -72,7 +100,21 @@
             {"key": "hpf",          "name": "HPF",         "type": "int",   "min": 20,   "max": 2000,  "step": 1},
             {"key": "lpf",          "name": "LPF",         "type": "int",   "min": 500,  "max": 20000, "step": 1},
             {"key": "limiter",      "name": "Limiter",     "type": "enum",  "options": ["Off","On"]},
-            {"key": "polyphony",    "name": "Polyphony",   "type": "enum",  "options": ["1","2","4"]}
+            {"key": "polyphony",    "name": "Polyphony",   "type": "enum",  "options": ["1","2","4"]},
+            {"key": "arp_rate",     "name": "Arp Rate",    "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "arp_pattern",  "name": "Arp Ptrn",    "type": "enum",  "options": ["Off","Up","Down","Random","Chord"]},
+            {"key": "arp_sync",     "name": "Arp Sync",    "type": "enum",  "options": ["Free","Sync"]},
+            {"key": "drift",        "name": "Drift",       "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "motion_rate",  "name": "Mot Rate",    "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "motion_depth", "name": "Mot Depth",   "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "motion_shape", "name": "Mot Shape",   "type": "enum",  "options": ["Sine","Triangle","Square","S&H"]},
+            {"key": "scoop",        "name": "Scoop",       "type": "float", "min": 0,    "max": 1,     "step": 0.01},
+            {"key": "preset",       "name": "Preset",      "type": "enum",  "options": ["Bell","Pad","Arp Up","Arp Rnd","Drifter","Shimmer","Drone Bass","Tremolo","Bells","Scooped","Evolving","Stutter","Resonant","Wavy","Pulsing","Minimal","Lush","Crisp","Glitch","Warm","Bright","Deep","Airy","Metallic","Modulating","Sparse","Liquid","Rhythmic","Spacious","Chaos"]},
+            {"key": "rnd_preset",   "name": "Rnd Preset",  "type": "int", "min": 0, "max": 1, "step": 1},
+            {"key": "rnd_spectra",  "name": "Rnd Spectra", "type": "int", "min": 0, "max": 1, "step": 1},
+            {"key": "rnd_motion",   "name": "Rnd Motion",  "type": "int", "min": 0, "max": 1, "step": 1},
+            {"key": "rnd_pan",      "name": "Rnd Pan",     "type": "int", "min": 0, "max": 1, "step": 1},
+            {"key": "stereo_width", "name": "Stereo Width","type": "float", "min": 0,    "max": 1,     "step": 0.01}
         ]
     }
 }
